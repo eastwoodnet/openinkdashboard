@@ -123,6 +123,57 @@ export OPENINK_API_TOKEN="your-secure-token"
 
 ---
 
+## 📢 即时大字通知推送 (Instant Alert API)
+
+OpenInk 支持**毫秒级插播即时大字通知**。当外部系统（如 Home Assistant 自动化、企业微信/飞书 Webhook、监控告警脚本或 iOS 快捷指令）发送通知请求时，服务端会立即生成专用的 16 级灰阶大字画报（居中大字标题、自适应正文字号、来源徽标与有效倒计时），并通过 HTTP 长轮询挂起点毫秒级唤醒墨水屏终端打断轮播，立即呈现通知。
+
+### 1. 标准 JSON 格式推送 (`POST /api/alert/push`)
+
+```bash
+curl -X POST http://<主机IP>:8000/api/alert/push \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "会议提醒",
+    "text": "10分钟后在第3会议室召开敏捷评审会，请携带笔记本。",
+    "sender": "企业微信",
+    "duration": 15
+  }'
+```
+
+**请求字段说明**：
+- `title` *(string)*: 通知大标题（例如 `"桌面备忘"`、`"门铃提醒"`、`"运维告警"`）。
+- `text` *(string, 必选)*: 通知正文内容，自动计算字号与折行排版。
+- `sender` *(string, 可选)*: 来源徽标，默认 `"OpenInk"`。
+- `duration` *(int, 可选)*: 保持时长（分钟），默认 15 分钟。超时后设备自动恢复原看板轮播。
+
+### 2. 单行快捷 GET 请求 (`GET /api/alert/quick`)
+
+适合在浏览器书签、Home Assistant `rest_command` 或简易 Webhook 中直接调用：
+
+```bash
+# 推荐使用 --data-urlencode（自动处理中文字符转义）
+curl -G "http://<主机IP>:8000/api/alert/quick" \
+  --data-urlencode "title=快递到达" \
+  --data-urlencode "text=您的顺丰快递已投递至蜂巢快递柜" \
+  --data-urlencode "sender=菜鸟驿站" \
+  --data-urlencode "duration=20"
+```
+
+### 3. 手动解除即时通知 (`POST /api/alert/dismiss` 或 物理按键)
+
+- **HTTP 接口解除**：
+  ```bash
+  curl -X POST http://<主机IP>:8000/api/alert/dismiss
+  # 或快捷 GET 请求:
+  curl http://<主机IP>:8000/api/alert/dismiss
+  ```
+- **终端物理交互解除**：在 N516 或 Web Kiosk 终端上按下 `Enter` / `Return` / `空格键`，即可立即关闭当前通知并恢复主看板。
+
+> [!TIP]
+> **API Token 鉴权适配**：若服务端启用了 `OPENINK_API_TOKEN`，在 curl 时只需追加 Header `-H "X-API-Token: your-token"` 或在 URL 尾部添加 `?token=your-token` 即可。
+
+---
+
 ## 🗺️ 后续版本路线图
 
 - **v1.2 (当前版本)**：
