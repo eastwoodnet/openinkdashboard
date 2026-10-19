@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.log
+.DS_Store
+/tmp/
+.env
+
+# 本地追踪的设计/调研文档、开发笔记与测试用例（不上传至 GitHub）
+docs/
+tests/
+demos/
+AGENTS.md
+ARCHITECTURE.md
+ARMBIAN_GUIDE.md
+DEPLOYMENT.md
+DESIGN_SPEC.md
+DEVELOPER_GUIDE.md
+NOTES.md
+todos.txt

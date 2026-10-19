@@ -1,0 +1,10 @@
+#!/bin/sh
+# /etc/network/if-down.d/openink-agent
+# 当汉王 N516 断开 USB 网络 (usb0) 时，立即终止守护进程以节省电量（纯电子书休眠模式）
+if [ "$IFACE" = "usb0" ] || [ -z "$IFACE" ]; then
+    if [ -f /tmp/openink-agent.pid ]; then
+        PID=$(cat /tmp/openink-agent.pid 2>/dev/null)
+        [ -n "$PID" ] && kill "$PID" 2>/dev/null
+        rm -f /tmp/openink-agent.pid
+    fi
+fi

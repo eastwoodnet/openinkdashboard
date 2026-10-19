@@ -1,0 +1,1250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenInk Studio</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .eink-bezel {
+      box-shadow: 0 20px 40px -15px rgba(0,0,0,0.35), 0 0 0 10px #222222, 0 0 0 14px #3b3b3b;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen flex flex-col">
+
+  <!-- Top Navigation Bar -->
+  <header class="bg-slate-900 text-white px-6 py-3.5 flex items-center justify-between shadow-md">
+    <div class="flex items-center space-x-3">
+      <div class="w-8 h-8 rounded-lg bg-white text-slate-900 font-black flex items-center justify-center text-sm tracking-tighter">
+        INK
+      </div>
+      <div>
+        <h1 class="text-base font-bold tracking-tight">OpenInk Studio</h1>
+        <p class="text-xs text-slate-400">E-Ink 看板编排与插件工作台</p>
+      </div>
+    </div>
+    <div class="flex items-center space-x-2.5">
+      <a href="/kiosk" target="_blank" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-full text-xs font-bold transition shadow-sm flex items-center space-x-1">
+        <span>🖥️ Web Kiosk</span>
+      </a>
+      <div class="flex items-center bg-slate-800 px-3 py-1.5 rounded-full text-xs font-medium border border-slate-700">
+        <span id="deviceDot" class="w-2.5 h-2.5 bg-slate-500 rounded-full mr-2"></span>
+        <span id="deviceStatusText">正在检测终端状态…</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Studio Workspace (items-start guarantees right preview is aligned to TOP, never vertically centered) -->
+  <main class="max-w-7xl w-full mx-auto p-5 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+    <!-- Left Column: Page Tabs + Plugin Loader + Layout & Slot Controls (5 Cols) -->
+    <div class="lg:col-span-5 space-y-4">
+
+      <!-- STEP 0: Dynamic Multi-Page Tabs (Page 1, Page 2, Page 3... Reusing the Exact Same Builder) & Plugin Loader -->
+      <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+        <div class="flex items-center justify-between">
+          <div>
+            <label class="text-xs font-bold text-slate-700 uppercase tracking-wider block">0. 看板页面、轮播模式与外部插件</label>
+            <span class="text-[11px] text-slate-400">支持多页自由扩展，每页可独立设定分栏结构与数据源卡片</span>
+          </div>
+          <button type="button" onclick="addDashboardPage()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold px-2.5 py-1 rounded-lg transition shrink-0">
+            + 新增页面
+          </button>
+        </div>
+
+        <!-- Page Tabs Bar -->
+        <div id="pageTabsContainer" class="flex flex-wrap items-center gap-1.5 pt-0.5"></div>
+
+        <!-- Display Mode (Carousel vs Manual) & Interval Selector -->
+        <div class="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200/80">
+          <div class="flex items-center space-x-2">
+            <span class="text-[11px] font-bold text-slate-600">🔄 多页展示模式:</span>
+            <select id="displayModeSelect" onchange="onDisplayModeChange()" class="bg-white border border-slate-300 text-slate-800 text-xs font-bold rounded-lg px-2 py-1">
+              <option value="carousel">自动轮播 (Carousel)</option>
+              <option value="manual">手动翻页 (Manual)</option>
+            </select>
+          </div>
+          <div id="carouselIntervalBox" class="flex items-center space-x-1.5">
+            <span class="text-[11px] text-slate-500 font-medium">间隔:</span>
+            <select id="carouselIntervalSelect" onchange="onDisplayModeChange()" class="bg-white border border-slate-300 text-slate-800 text-xs font-mono font-bold rounded-lg px-2 py-1">
+              <option value="30">30 秒</option>
+              <option value="60" selected>1 分钟</option>
+              <option value="180">3 分钟</option>
+              <option value="300">5 分钟</option>
+              <option value="600">10 分钟</option>
+              <option value="900">15 分钟</option>
+              <option value="1800">30 分钟</option>
+              <option value="3600">1 小时</option>
+              <option value="7200">2 小时</option>
+              <option value="14400">4 小时</option>
+              <option value="43200">12 小时</option>
+              <option value="86400">24 小时</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- External Plugin Loader Switches -->
+        <div class="pt-2 border-t border-slate-100">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-[11px] font-bold text-slate-500">🔌 外部数据源插件 (启用后自动加载并分配槽位)</span>
+          </div>
+          <div id="pluginToggleList" class="grid grid-cols-2 gap-1.5"></div>
+        </div>
+      </div>
+
+      <!-- STEP 1: Choose 1 of 5 Layout Grid Structures (For Current Selected Page) -->
+      <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+        <div class="flex items-center justify-between mb-3">
+          <label class="text-xs font-bold text-slate-600 uppercase tracking-wider">1. 选择当前页分栏布局 (5 种网格结构)</label>
+          <span id="currentPageBadge" class="text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded">当前编辑: 第 1 页</span>
+        </div>
+        <div class="grid grid-cols-5 gap-2" id="templateButtons">
+          <!-- 2|1 左二右一 -->
+          <button type="button" onclick="setTemplate('2_1')" data-tpl="2_1" class="tpl-btn p-2 rounded-xl border-2 border-slate-900 bg-slate-900 text-white flex flex-col items-center justify-center transition">
+            <div class="w-11 h-8 border border-current rounded grid grid-cols-2 gap-0.5 p-0.5 mb-1.5 bg-white">
+              <div class="grid grid-rows-2 gap-0.5">
+                <div class="bg-slate-700 rounded-sm"></div>
+                <div class="bg-slate-700 rounded-sm"></div>
+              </div>
+              <div class="bg-slate-900 rounded-sm"></div>
+            </div>
+            <span class="text-[11px] font-bold leading-tight">2|1</span>
+            <span class="text-[10px] opacity-75 scale-90">左二右一</span>
+          </button>
+
+          <!-- 1|2 左一右二 -->
+          <button type="button" onclick="setTemplate('1_2')" data-tpl="1_2" class="tpl-btn p-2 rounded-xl border-2 border-slate-200 hover:border-slate-300 text-slate-700 flex flex-col items-center justify-center transition">
+            <div class="w-11 h-8 border border-slate-600 rounded grid grid-cols-2 gap-0.5 p-0.5 mb-1.5 bg-white">
+              <div class="bg-slate-800 rounded-sm"></div>
+              <div class="grid grid-rows-2 gap-0.5">
+                <div class="bg-slate-500 rounded-sm"></div>
+                <div class="bg-slate-500 rounded-sm"></div>
+              </div>
+            </div>
+            <span class="text-[11px] font-bold leading-tight">1|2</span>
+            <span class="text-[10px] opacity-75 scale-90">左一右二</span>
+          </button>
+
+          <!-- 2x2 四分屏 -->
+          <button type="button" onclick="setTemplate('2x2')" data-tpl="2x2" class="tpl-btn p-2 rounded-xl border-2 border-slate-200 hover:border-slate-300 text-slate-700 flex flex-col items-center justify-center transition">
+            <div class="w-11 h-8 border border-slate-600 rounded grid grid-cols-2 grid-rows-2 gap-0.5 p-0.5 mb-1.5 bg-white">
+              <div class="bg-slate-600 rounded-sm"></div>
+              <div class="bg-slate-600 rounded-sm"></div>
+              <div class="bg-slate-600 rounded-sm"></div>
+              <div class="bg-slate-600 rounded-sm"></div>
+            </div>
+            <span class="text-[11px] font-bold leading-tight">2×2</span>
+            <span class="text-[10px] opacity-75 scale-90">四象限</span>
+          </button>
+
+          <!-- 1x2 左右双栏 -->
+          <button type="button" onclick="setTemplate('1x2')" data-tpl="1x2" class="tpl-btn p-2 rounded-xl border-2 border-slate-200 hover:border-slate-300 text-slate-700 flex flex-col items-center justify-center transition">
+            <div class="w-11 h-8 border border-slate-600 rounded grid grid-cols-2 gap-0.5 p-0.5 mb-1.5 bg-white">
+              <div class="bg-slate-700 rounded-sm"></div>
+              <div class="bg-slate-700 rounded-sm"></div>
+            </div>
+            <span class="text-[11px] font-bold leading-tight">1×2</span>
+            <span class="text-[10px] opacity-75 scale-90">左右双栏</span>
+          </button>
+
+          <!-- 1x1 全屏单卡 -->
+          <button type="button" onclick="setTemplate('1x1')" data-tpl="1x1" class="tpl-btn p-2 rounded-xl border-2 border-slate-200 hover:border-slate-300 text-slate-700 flex flex-col items-center justify-center transition">
+            <div class="w-11 h-8 border border-slate-600 rounded p-0.5 mb-1.5 bg-white flex">
+              <div class="bg-slate-800 rounded-sm w-full h-full"></div>
+            </div>
+            <span class="text-[11px] font-bold leading-tight">1×1</span>
+            <span class="text-[10px] opacity-75 scale-90">全屏单卡</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- STEP 2: Interactive Visual Card Grid for Selecting Data Sources per Slot -->
+      <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+        <div class="flex items-center justify-between mb-2.5">
+          <label class="text-xs font-bold text-slate-600 uppercase tracking-wider">2. 为当前页各卡片槽位选择数据源</label>
+          <span id="layoutSpecTag" class="text-[11px] font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded">2|1 左二右一</span>
+        </div>
+        <p class="text-[11px] text-slate-400 mb-3">可选「系统内置数据源」或上方已启用的「外部插件数据源」：</p>
+
+        <!-- Dynamic 2D Visual Slot Grid -->
+        <div id="visualSlotGrid" class="bg-slate-100 p-2.5 rounded-xl border border-slate-200"></div>
+      </div>
+
+      <!-- Primary Action: Save & Publish -->
+      <button id="pushBtn" onclick="pushToDevice()" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 px-4 rounded-xl shadow-md transition text-sm flex items-center justify-center space-x-2">
+        <span id="pushBtnLabel">📲 保存并发布看板</span>
+      </button>
+
+      <!-- STEP 3: Contextual Data Source Content Configuration -->
+      <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
+          <label class="text-xs font-bold text-slate-600 uppercase tracking-wider">3. 当前已挂载数据源与插件内容设置</label>
+          <span id="activeSourcesSummary" class="text-[11px] text-indigo-600 font-medium"></span>
+        </div>
+
+        <!-- (A) P0 Plugin: External ICS Calendar & Countdowns Config ('agenda') -->
+        <div id="dsConfigAgenda" class="hidden bg-indigo-50/60 p-3.5 rounded-xl border border-indigo-200 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="text-xs font-bold text-indigo-950 block">📆 [P0 外部插件] 外部日历同步与倒数日 (ICS)</span>
+              <span class="text-[11px] text-slate-500">支持订阅 iCloud / Google / 飞书 .ics 链接 + 自定义日程与重要倒数日</span>
+            </div>
+            <span class="text-[10px] font-bold bg-indigo-600 text-white px-2 py-0.5 rounded">方案 A 独立卡 + 月历打点</span>
+          </div>
+
+          <!-- ICS URLs input -->
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 mb-1">外部 .ics 订阅链接（每行一个 URL，支持 https:// 或 webcal://）</label>
+            <textarea id="agendaIcsUrls" rows="2" placeholder="例如: https://pXX-caldav.icloud.com/published/2/... 或飞书/Google .ics 链接" class="w-full bg-white border border-slate-300 text-slate-800 text-xs rounded-lg p-2 font-mono resize-none"></textarea>
+          </div>
+
+          <!-- Custom Schedule & Countdown Items -->
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="text-[11px] font-bold text-slate-600">自定义日程与纪念日倒数（日期填 <code class="bg-white px-1 rounded">YYYY-MM-DD</code>、<code class="bg-white px-1 rounded">MM-DD</code> 或 <code class="bg-white px-1 rounded">+天数</code>）</label>
+              <button type="button" onclick="addAgendaItemRow()" class="text-[11px] text-indigo-700 hover:text-indigo-900 font-bold">+ 新增日程/倒数日</button>
+            </div>
+            <div id="agendaItemsContainer" class="space-y-1.5 max-h-52 overflow-y-auto pr-1"></div>
+          </div>
+
+          <button type="button" onclick="saveAgendaPluginConfig()" class="w-full bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-bold py-2 rounded-lg transition shadow-sm">
+            🔄 保存 ICS 与日程倒数配置并刷新预览
+          </button>
+        </div>
+
+        <!-- (B) Weather Data Source Config (Built-in) -->
+        <div id="dsConfigWeather" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-700">🌤️ [内置] 实时气象数据源 · 城市设置</span>
+            <span class="text-[11px] text-slate-400">wttr.in 实时气象</span>
+          </div>
+          <div class="flex space-x-2">
+            <select id="cityQuickSelect" onchange="onQuickCitySelect(this.value)" class="bg-white border border-slate-300 text-slate-800 text-xs rounded-lg px-2.5 py-2 font-medium">
+              <option value="Beijing">北京 (Beijing)</option>
+              <option value="Shanghai">上海 (Shanghai)</option>
+              <option value="Guangzhou">广州 (Guangzhou)</option>
+              <option value="Shenzhen">深圳 (Shenzhen)</option>
+              <option value="Hangzhou">杭州 (Hangzhou)</option>
+              <option value="Chengdu">成都 (Chengdu)</option>
+              <option value="Wuhan">武汉 (Wuhan)</option>
+              <option value="Nanjing">南京 (Nanjing)</option>
+              <option value="custom">自定义城市…</option>
+            </select>
+            <input id="cityInput" type="text" value="Beijing" placeholder="输入城市名或拼音" onkeydown="if(event.key==='Enter') saveWeatherCity()" class="flex-1 bg-white border border-slate-300 text-slate-800 text-xs rounded-lg px-2.5 py-2 font-medium">
+            <button onclick="saveWeatherCity()" class="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition">更新</button>
+          </div>
+        </div>
+
+        <!-- (C) Todo Data Source Config (Built-in) -->
+        <div id="dsConfigTodo" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-700">☑️ [内置] 待办清单数据源 · 任务编辑</span>
+            <button onclick="clearDoneTodos()" class="text-[11px] text-slate-400 hover:text-rose-600 transition">清理已完成项</button>
+          </div>
+          <div class="flex space-x-2">
+            <input id="newTodoInput" type="text" placeholder="输入新待办事项，按回车添加…" onkeydown="if(event.key==='Enter') addTodo()" class="flex-1 bg-white border border-slate-300 text-slate-800 text-xs rounded-lg px-2.5 py-2 font-medium">
+            <button onclick="addTodo()" class="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition">添加</button>
+          </div>
+          <div id="todoListContainer" class="max-h-44 overflow-y-auto space-y-1.5 pr-1"></div>
+        </div>
+
+        <!-- (D) Sensors Data Source Config (External Plugin) -->
+        <div id="dsConfigSensors" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-700">🌡️ [外部插件] Home Assistant 环境传感器配置</span>
+            <button onclick="addSensorRow()" class="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold">+ 新增传感器行</button>
+          </div>
+          <div id="sensorListContainer" class="space-y-1.5 max-h-48 overflow-y-auto pr-1"></div>
+          <button onclick="saveSensorsConfig()" class="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-2 rounded-lg transition">应用传感器列表并刷新预览</button>
+        </div>
+
+        <!-- (E) Calendar Data Source Info (Built-in) -->
+        <div id="dsConfigCalendar" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between">
+          <div>
+            <span class="text-xs font-bold text-slate-700 block">📅 [内置] 日历与农历节气数据源</span>
+            <span class="text-[11px] text-slate-500">自动同步公历、1900-2050 农历干支节气；启用 ICS 插件后自动在有日程的日期下打点标记</span>
+          </div>
+          <span class="text-[11px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded shrink-0">实时计算</span>
+        </div>
+
+      </div>
+
+      <!-- STEP 4: Always-Visible Real-Time Big-Text Alert Notification & Preview Card -->
+      <div id="dsConfigAlert" class="bg-white p-4 rounded-2xl shadow-sm border-2 border-rose-200 space-y-3">
+        <div class="flex items-center justify-between border-b border-rose-100 pb-2.5">
+          <div>
+            <label class="text-xs font-bold text-rose-700 uppercase tracking-wider block">4. 实时大字通知推送与效果预览</label>
+            <span class="text-[11px] text-slate-400">输入文字即可在右侧实时预览全屏大字通知排版效果，或一键插播至终端</span>
+          </div>
+          <button type="button" onclick="setPreviewMode('alert')" class="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-2.5 py-1.5 rounded-lg transition shrink-0">
+            👁️ 预览大字通知效果
+          </button>
+        </div>
+
+        <div class="space-y-2">
+          <div>
+            <label class="block text-[11px] font-bold text-slate-500 mb-1">通知大标题</label>
+            <input id="alertTitle" type="text" value="桌面重点备忘提醒" oninput="onAlertInput()" onfocus="setPreviewMode('alert')" placeholder="通知/备忘标题" class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs rounded-lg p-2 font-bold focus:bg-white">
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-500 mb-1">大字通知正文（支持多行自动折行排版）</label>
+            <textarea id="alertText" rows="3" oninput="onAlertInput()" onfocus="setPreviewMode('alert')" placeholder="输入通知或备忘正文（自动多行折行排版）…" class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs rounded-lg p-2 font-medium resize-none focus:bg-white">下午 15:00 系统架构评审会议，请提前准备好演示文稿与测试环境。</textarea>
+          </div>
+          <div class="flex items-center space-x-2">
+            <div class="flex-1">
+              <label class="block text-[10px] font-bold text-slate-400 mb-0.5">来源 / 署名</label>
+              <input id="alertSender" type="text" value="OpenInk Studio" oninput="onAlertInput()" onfocus="setPreviewMode('alert')" placeholder="署名/来源" class="w-full bg-slate-50 border border-slate-300 text-xs rounded-lg p-2 font-medium focus:bg-white">
+            </div>
+            <div class="w-24">
+              <label class="block text-[10px] font-bold text-slate-400 mb-0.5">停留时长(分钟)</label>
+              <input id="alertDuration" type="number" value="15" min="1" max="120" oninput="onAlertInput()" onfocus="setPreviewMode('alert')" class="w-full bg-slate-50 border border-slate-300 text-xs rounded-lg p-2 font-bold text-center focus:bg-white">
+            </div>
+          </div>
+        </div>
+
+        <div class="flex space-x-2 pt-1">
+          <button type="button" onclick="sendAlert()" class="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 px-3 rounded-xl shadow-sm transition text-xs flex items-center justify-center space-x-1">
+            <span>🚨 立即发布大字通知</span>
+          </button>
+          <button type="button" onclick="dismissAlert()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2.5 px-3 rounded-xl transition text-xs">
+            ↩️ 恢复常规看板
+          </button>
+        </div>
+      </div>
+
+      <!-- Optional API Token (Hidden by default unless auth_required or user expands) -->
+      <details id="apiTokenDetails" class="hidden bg-white px-4 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-500">
+        <summary class="cursor-pointer font-medium">🔒 访问密钥 (API Token)</summary>
+        <div class="mt-2.5">
+          <input id="apiTokenInput" type="password" placeholder="输入 OPENINK_API_TOKEN" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-xs rounded-lg p-2">
+        </div>
+      </details>
+
+      <div id="statusToast" class="hidden text-xs font-bold py-2.5 px-4 rounded-xl text-center"></div>
+
+    </div>
+
+    <!-- Right Column: TOP-ALIGNED Live 800x600 Pixel Preview (7 Cols, self-start + sticky top-5) -->
+    <div class="lg:col-span-7 self-start lg:sticky lg:top-5">
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+        
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3.5">
+          <div class="flex items-center space-x-2">
+            <span id="previewTitle" class="font-bold text-sm text-slate-800">OpenInk · 画布预览 (800×600)</span>
+            <span id="renderTime" class="text-xs bg-slate-100 text-slate-600 font-mono px-2 py-0.5 rounded">-- ms</span>
+            <span id="fileSize" class="text-xs bg-slate-100 text-slate-600 font-mono px-2 py-0.5 rounded">-- KB</span>
+          </div>
+
+          <!-- Instant Preview Mode Switcher: Dashboard vs Big-Text Alert Notification -->
+          <div class="flex items-center space-x-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button type="button" id="modeBtnDashboard" onclick="setPreviewMode('dashboard')" class="px-3 py-1 rounded-lg text-xs font-bold transition bg-slate-900 text-white shadow-sm">
+              📊 常规看板预览
+            </button>
+            <button type="button" id="modeBtnAlert" onclick="setPreviewMode('alert')" class="px-3 py-1 rounded-lg text-xs font-bold transition text-rose-700 hover:bg-rose-50">
+              🚨 大字通知效果预览
+            </button>
+          </div>
+        </div>
+
+        <!-- Landscape 4:3 (800x600) Preview Canvas Wrapper (Top-aligned, no vertical centering stretch) -->
+        <div class="bg-slate-200 rounded-xl p-5 flex items-start justify-center">
+          <div class="eink-bezel bg-white rounded-lg p-2.5 w-full max-w-2xl">
+            <div id="previewPlaceholder" class="w-full aspect-[4/3] rounded border border-slate-300 bg-slate-50 flex items-center justify-center text-slate-400 text-sm">正在渲染墨水屏画面…</div>
+            <img id="previewImg" alt="OpenInk Preview" class="hidden w-full aspect-[4/3] object-contain rounded border border-slate-300 shadow-inner">
+          </div>
+        </div>
+
+        <p class="text-xs text-slate-400 text-center mt-3">
+          预览图按 800×600 画布 1:1 实时渲染；点击右上角可随时切换「常规看板预览」与「大字通知效果预览」。
+        </p>
+
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // Layout specifications & slot metadata
+    const LAYOUT_SPECS = {
+      "2_1": {
+        name: "2|1 左二右一",
+        gridClass: "grid grid-cols-2 gap-2.5",
+        slots: [
+          { id: "top_left", label: "左上卡片", size: "382×282 象限槽", type: "quadrant", cellClass: "col-span-1" },
+          { id: "right", label: "右侧全高卡片", size: "382×580 全高槽", type: "half_v", cellClass: "col-span-1 row-span-2 flex flex-col justify-between" },
+          { id: "bottom_left", label: "左下卡片", size: "382×282 象限槽", type: "quadrant", cellClass: "col-span-1" }
+        ]
+      },
+      "1_2": {
+        name: "1|2 左一右二",
+        gridClass: "grid grid-cols-2 gap-2.5",
+        slots: [
+          { id: "left", label: "左侧全高卡片", size: "382×580 全高槽", type: "half_v", cellClass: "col-span-1 row-span-2 flex flex-col justify-between" },
+          { id: "top_right", label: "右上卡片", size: "382×282 象限槽", type: "quadrant", cellClass: "col-span-1" },
+          { id: "bottom_right", label: "右下卡片", size: "382×282 象限槽", type: "quadrant", cellClass: "col-span-1" }
+        ]
+      },
+      "2x2": {
+        name: "2×2 对称四象限",
+        gridClass: "grid grid-cols-2 gap-2.5",
+        slots: [
+          { id: "top_left", label: "左上卡片", size: "382×282 象限槽", type: "quadrant", cellClass: "col-span-1" },
+          { id: "top_right", label: "右上卡片", size: "382×282 象限槽", type: "quadrant", cellClass: "col-span-1" },
+          { id: "bottom_left", label: "左下卡片", size: "382×282 象限槽", type: "quadrant", cellClass: "col-span-1" },
+          { id: "bottom_right", label: "右下卡片", size: "382×282 象限槽", type: "quadrant", cellClass: "col-span-1" }
+        ]
+      },
+      "1x2": {
+        name: "1×2 左右双栏",
+        gridClass: "grid grid-cols-2 gap-2.5",
+        slots: [
+          { id: "left", label: "左半屏全高卡片", size: "382×580 全高槽", type: "half_v", cellClass: "col-span-1 py-4" },
+          { id: "right", label: "右半屏全高卡片", size: "382×580 全高槽", type: "half_v", cellClass: "col-span-1 py-4" }
+        ]
+      },
+      "1x1": {
+        name: "1×1 全屏单卡",
+        gridClass: "grid grid-cols-1 gap-2.5",
+        slots: [
+          { id: "full", label: "全屏单卡画布", size: "780×580 全屏槽", type: "full", cellClass: "col-span-1 py-4" }
+        ]
+      }
+    };
+
+    // Built-in Core Data Sources (Always loaded)
+    const BUILTIN_DATA_SOURCES = {
+      quadrant: [
+        { id: "calendar", name: "📅 [内置] 日历与周历", desc: "大字日期 + 农历干支 + 7日周历 (联动日程打点)" },
+        { id: "weather",  name: "🌤️ [内置] 实时天气", desc: "实时气温 + 高低温 + 体感/湿度/风况" },
+        { id: "todo",     name: "☑️ [内置] 待办事项清单", desc: "前 4 项重点待办 + 底部完成度进度条" }
+      ],
+      half_v: [
+        { id: "calendar", name: "📅 [内置] 日历与当月全览", desc: "大字日期 + 农历 + 当月全览日历矩阵 (联动日程打点)" },
+        { id: "weather",  name: "🌤️ [内置] 深度气象与趋势", desc: "实时天气 + 4项指标 + 未来3天趋势卡" },
+        { id: "todo",     name: "☑️ [内置] 全量待办清单", desc: "最多 7 项待办事项 + 底部完成度进度条" }
+      ],
+      full: [
+        { id: "focus",    name: "📰 [内置] 综合焦点大画报", desc: "左日历与天气 | 右待办清单 | 底7日周历" },
+        { id: "alert",    name: "🔔 [内置] 大字通知 / 备忘录", desc: "全屏大字标题 + 多行正文备忘或紧急通知" },
+        { id: "calendar", name: "📅 [内置] 全屏日历与月历矩阵", desc: "780×580 全宽公历、农历与当月日历表" },
+        { id: "weather",  name: "🌤️ [内置] 全屏气象与3天趋势", desc: "780×580 全宽实时天气与未来3天趋势" },
+        { id: "todo",     name: "☑️ [内置] 全屏待办事项清单", desc: "780×580 全宽展示待办清单与完成进度" }
+      ]
+    };
+
+    const DEFAULT_SLOTS = {
+      "2_1": { top_left: "calendar", bottom_left: "weather", right: "todo" },
+      "1_2": { left: "calendar", top_right: "weather", bottom_right: "agenda" },
+      "2x2": { top_left: "calendar", top_right: "weather", bottom_left: "agenda", bottom_right: "todo" },
+      "1x2": { left: "agenda", right: "todo" },
+      "1x1": { full: "focus" }
+    };
+
+    // Multi-page state: each page has { id, title, template, slots, slotMemory }
+    let dashboardPages = [
+      {
+        id: "page_1",
+        title: "第 1 页 · 主看板",
+        template: "2_1",
+        slots: { ...DEFAULT_SLOTS["2_1"] },
+        slotMemory: {}
+      }
+    ];
+    let activePageIndex = 0;
+
+    // External Plugin state
+    let pluginsConfig = {};
+    let pluginCatalog = [];
+    let enabledPluginIds = ["agenda", "sensors"];
+
+    let currentCity = "Beijing";
+    let currentSensors = [];
+    let currentAgendaItems = [];
+    let previewMode = "dashboard"; // "dashboard" | "alert"
+
+    function getCurrentPage() {
+      if (activePageIndex < 0 || activePageIndex >= dashboardPages.length) {
+        activePageIndex = 0;
+      }
+      return dashboardPages[activePageIndex];
+    }
+
+    function getAvailableDataSources(slotType) {
+      const baseList = [...(BUILTIN_DATA_SOURCES[slotType] || BUILTIN_DATA_SOURCES.quadrant)];
+      pluginCatalog.forEach(cat => {
+        if (cat.implemented && enabledPluginIds.includes(cat.id) && cat.slot_options && cat.slot_options[slotType]) {
+          baseList.push(cat.slot_options[slotType]);
+        }
+      });
+      return baseList;
+    }
+
+    function authHeaders() {
+      const t = localStorage.getItem('openink_api_token') || '';
+      return t ? { 'X-API-Token': t } : {};
+    }
+    document.getElementById('apiTokenInput').value = localStorage.getItem('openink_api_token') || '';
+    document.getElementById('apiTokenInput').addEventListener('change', (e) => {
+      localStorage.setItem('openink_api_token', e.target.value.trim());
+    });
+
+    function showToast(msg, isError = false) {
+      const toast = document.getElementById('statusToast');
+      toast.classList.remove('hidden', 'bg-red-100', 'text-red-800', 'bg-emerald-100', 'text-emerald-800');
+      if (isError) {
+        toast.classList.add('bg-red-100', 'text-red-800');
+      } else {
+        toast.classList.add('bg-emerald-100', 'text-emerald-800');
+      }
+      toast.textContent = msg;
+      setTimeout(() => toast.classList.add('hidden'), 4500);
+    }
+
+    // === STEP 0: Multi-Page Tabs & External Plugin Switches ===
+    function renderPageTabs() {
+      const box = document.getElementById('pageTabsContainer');
+      box.innerHTML = "";
+      dashboardPages.forEach((p, idx) => {
+        const isActive = (idx === activePageIndex);
+        const tab = document.createElement('div');
+        tab.className = `inline-flex items-center rounded-xl border text-xs font-bold transition ${
+          isActive
+            ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+        }`;
+        tab.innerHTML = `
+          <button type="button" onclick="selectDashboardPage(${idx})" class="px-3 py-1.5 flex items-center space-x-1.5">
+            <span>📄 第 ${idx + 1} 页</span>
+            <span class="text-[10px] opacity-75 font-mono">(${p.template.replace('_', '|')})</span>
+          </button>
+          ${dashboardPages.length > 1 ? `
+            <button type="button" onclick="removeDashboardPage(${idx})" title="删除此页" class="pr-2.5 pl-0.5 py-1.5 opacity-60 hover:opacity-100 text-xs">×</button>
+          ` : ''}
+        `;
+        box.appendChild(tab);
+      });
+
+      document.getElementById('currentPageBadge').textContent = `当前编辑: 第 ${activePageIndex + 1} 页 (共 ${dashboardPages.length} 页)`;
+      document.getElementById('pushBtnLabel').textContent =
+        dashboardPages.length === 1
+          ? `📲 保存并发布当前看板`
+          : `📲 保存并发布全部 ${dashboardPages.length} 页看板`;
+    }
+
+    function selectDashboardPage(idx) {
+      activePageIndex = idx;
+      const page = getCurrentPage();
+      previewMode = Object.values(page.slots).includes('alert') ? 'alert' : 'dashboard';
+      updatePreviewModeUI();
+      renderPageTabs();
+      updateTemplateButtonStyles();
+      renderVisualSlotGrid();
+      updateDataSourceConfigPanels();
+      updatePreview();
+    }
+
+    function addDashboardPage() {
+      const nextNum = dashboardPages.length + 1;
+      // Default new page to 1_2 or 1x2 with enabled plugin if available
+      const defaultRight = enabledPluginIds.includes('agenda') ? 'agenda' : 'todo';
+      dashboardPages.push({
+        id: `page_${nextNum}`,
+        title: `第 ${nextNum} 页 · 扩展页`,
+        template: "1_2",
+        slots: { left: "calendar", top_right: "weather", bottom_right: defaultRight },
+        slotMemory: {}
+      });
+      selectDashboardPage(dashboardPages.length - 1);
+      persistPagesConfig();
+      showToast(`✓ 已新增「第 ${nextNum} 页」，可独立选择分栏布局与插件数据源`);
+    }
+
+    function removeDashboardPage(idx) {
+      if (dashboardPages.length <= 1) return;
+      dashboardPages.splice(idx, 1);
+      if (activePageIndex >= dashboardPages.length) {
+        activePageIndex = dashboardPages.length - 1;
+      }
+      selectDashboardPage(activePageIndex);
+      persistPagesConfig();
+      showToast(`✓ 已删除页面，当前共 ${dashboardPages.length} 页`);
+    }
+
+    async function persistPagesConfig() {
+      const cleanPages = dashboardPages.map((p, i) => ({
+        id: `page_${i + 1}`,
+        title: `第 ${i + 1} 页`,
+        template: p.template,
+        slots: p.slots
+      }));
+      await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ pages: cleanPages })
+      });
+    }
+
+    function renderPluginToggles() {
+      const box = document.getElementById('pluginToggleList');
+      box.innerHTML = "";
+      pluginCatalog.filter(cat => cat.implemented).forEach(cat => {
+        const isEnabled = enabledPluginIds.includes(cat.id);
+        const item = document.createElement('div');
+        item.className = `flex items-center justify-between p-2 rounded-lg border text-xs ${
+          isEnabled ? 'bg-indigo-50/70 border-indigo-300 text-indigo-950' : 'bg-slate-50 border-slate-200 text-slate-500'
+        }`;
+        item.innerHTML = `
+          <div class="truncate pr-1.5">
+            <span class="font-bold block truncate">${cat.name}</span>
+            <span class="text-[10px] opacity-75">[${cat.tier}] ${isEnabled ? '已加载' : '未启用'}</span>
+          </div>
+          <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleExternalPlugin('${cat.id}', this.checked)" class="w-4 h-4 rounded text-indigo-600 focus:ring-0 cursor-pointer shrink-0">
+        `;
+        box.appendChild(item);
+      });
+    }
+
+    async function toggleExternalPlugin(pluginId, enabled) {
+      const updateObj = { [pluginId]: { enabled } };
+      const resp = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ plugins: updateObj })
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        pluginsConfig = data.plugins || pluginsConfig;
+        enabledPluginIds = data.enabled_plugins || [];
+        renderPluginToggles();
+        renderVisualSlotGrid();
+        updateDataSourceConfigPanels();
+        updatePreview();
+        showToast(enabled ? `✓ 已加载外部插件 [${pluginId}]，可在卡片槽位中选择` : `✓ 已卸载外部插件 [${pluginId}]`);
+      }
+    }
+
+    function updatePreviewModeUI() {
+      const btnDash = document.getElementById('modeBtnDashboard');
+      const btnAlert = document.getElementById('modeBtnAlert');
+      const titleEl = document.getElementById('previewTitle');
+
+      if (previewMode === 'alert') {
+        btnAlert.className = "px-3 py-1 rounded-lg text-xs font-bold transition bg-rose-600 text-white shadow-sm";
+        btnDash.className = "px-3 py-1 rounded-lg text-xs font-bold transition text-slate-600 hover:bg-slate-200";
+        titleEl.textContent = "OpenInk · 大字通知效果预览 (800×600)";
+      } else {
+        btnDash.className = "px-3 py-1 rounded-lg text-xs font-bold transition bg-slate-900 text-white shadow-sm";
+        btnAlert.className = "px-3 py-1 rounded-lg text-xs font-bold transition text-rose-700 hover:bg-rose-50";
+        titleEl.textContent = `OpenInk · 第 ${activePageIndex + 1} 页画布预览 (800×600)`;
+      }
+    }
+
+    function setPreviewMode(mode, shouldRender = true) {
+      previewMode = mode;
+      updatePreviewModeUI();
+      if (shouldRender) {
+        updatePreview();
+      }
+    }
+
+    function updateTemplateButtonStyles() {
+      const curTpl = getCurrentPage().template;
+      document.querySelectorAll('.tpl-btn').forEach(btn => {
+        if (btn.getAttribute('data-tpl') === curTpl) {
+          btn.classList.add('border-slate-900', 'bg-slate-900', 'text-white');
+          btn.classList.remove('border-slate-200', 'text-slate-700');
+        } else {
+          btn.classList.remove('border-slate-900', 'bg-slate-900', 'text-white');
+          btn.classList.add('border-slate-200', 'text-slate-700');
+        }
+      });
+    }
+
+    function setTemplate(tpl) {
+      const page = getCurrentPage();
+      page.slotMemory = page.slotMemory || {};
+      page.slotMemory[page.template] = { ...page.slots };
+      page.template = tpl;
+      page.slots = { ...DEFAULT_SLOTS[tpl], ...(page.slotMemory[tpl] || {}) };
+      previewMode = Object.values(page.slots).includes('alert') ? 'alert' : 'dashboard';
+      updatePreviewModeUI();
+      renderPageTabs();
+      updateTemplateButtonStyles();
+      renderVisualSlotGrid();
+      updateDataSourceConfigPanels();
+      updatePreview();
+    }
+
+    function renderVisualSlotGrid() {
+      const page = getCurrentPage();
+      const spec = LAYOUT_SPECS[page.template] || LAYOUT_SPECS["2_1"];
+      document.getElementById('layoutSpecTag').textContent = `第 ${activePageIndex + 1} 页 · ${spec.name}`;
+
+      const grid = document.getElementById('visualSlotGrid');
+      grid.className = `bg-slate-100 p-2.5 rounded-xl border border-slate-200 ${spec.gridClass}`;
+      grid.innerHTML = "";
+
+      spec.slots.forEach(s => {
+        const options = getAvailableDataSources(s.type);
+        if (!options.some(o => o.id === page.slots[s.id])) {
+          page.slots[s.id] = options[0].id;
+        }
+        const selectedOpt = options.find(o => o.id === page.slots[s.id]) || options[0];
+
+        const card = document.createElement('div');
+        card.className = `bg-white p-3 rounded-lg border-2 border-slate-800 shadow-[3px_3px_0px_#6b7280] ${s.cellClass}`;
+        card.innerHTML = `
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-xs font-extrabold text-slate-900">${s.label}</span>
+              <span class="text-[10px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">${s.size}</span>
+            </div>
+            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">选择数据源内容</label>
+            <select class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs rounded-lg p-2 font-bold focus:ring-2 focus:ring-slate-900" onchange="onSlotChange('${s.id}', this.value)">
+              ${options.map(opt => `<option value="${opt.id}" ${page.slots[s.id] === opt.id ? 'selected' : ''}>${opt.name}</option>`).join('')}
+            </select>
+          </div>
+          <div class="mt-2 pt-1.5 border-t border-slate-100 text-[11px] text-slate-500 leading-snug">
+            展示内容：${selectedOpt.desc}
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function onSlotChange(slotId, widgetId) {
+      const page = getCurrentPage();
+      page.slots[slotId] = widgetId;
+      page.slotMemory = page.slotMemory || {};
+      page.slotMemory[page.template] = { ...page.slots };
+      previewMode = (widgetId === 'alert') ? 'alert' : 'dashboard';
+      updatePreviewModeUI();
+      renderVisualSlotGrid();
+      updateDataSourceConfigPanels();
+      updatePreview();
+    }
+
+    function updateDataSourceConfigPanels() {
+      const page = getCurrentPage();
+      const mounted = new Set(Object.values(page.slots));
+      const hasAgenda = (mounted.has('agenda') || enabledPluginIds.includes('agenda'));
+      const hasWeather = mounted.has('weather') || mounted.has('focus');
+      const hasTodo = mounted.has('todo') || mounted.has('focus');
+      const hasSensors = mounted.has('sensors') && enabledPluginIds.includes('sensors');
+      const hasCalendar = mounted.has('calendar') || mounted.has('focus');
+
+      document.getElementById('dsConfigAgenda').classList.toggle('hidden', !enabledPluginIds.includes('agenda'));
+      document.getElementById('dsConfigWeather').classList.toggle('hidden', !hasWeather);
+      document.getElementById('dsConfigTodo').classList.toggle('hidden', !hasTodo);
+      document.getElementById('dsConfigSensors').classList.toggle('hidden', !hasSensors);
+      document.getElementById('dsConfigCalendar').classList.toggle('hidden', !hasCalendar);
+
+      const names = [];
+      if (hasCalendar) names.push('日历');
+      if (hasWeather) names.push('天气');
+      if (hasTodo) names.push('待办');
+      if (mounted.has('agenda')) names.push('ICS日程(P0)');
+      if (hasSensors) names.push('环境传感器');
+      if (mounted.has('alert')) names.push('大字通知');
+      document.getElementById('activeSourcesSummary').textContent = `当前页已挂载: ${names.join(' + ')}`;
+    }
+
+    function getAlertPayload() {
+      const title = document.getElementById('alertTitle').value || '桌面重点备忘提醒';
+      const body = document.getElementById('alertText').value || '无详细正文内容';
+      const sender = document.getElementById('alertSender').value || 'OpenInk Studio';
+      const duration = parseInt(document.getElementById('alertDuration').value) || 15;
+      return {
+        title,
+        body,
+        sender,
+        time: new Date().toTimeString().slice(0, 5),
+        timeout: duration * 60
+      };
+    }
+
+    function getAlertPayloadIfNeeded() {
+      const page = getCurrentPage();
+      const mounted = new Set(Object.values(page.slots));
+      if (!mounted.has('alert')) return null;
+      return getAlertPayload();
+    }
+
+    let alertDebounceTimer = null;
+    function onAlertInput() {
+      if (previewMode !== 'alert') {
+        previewMode = 'alert';
+        updatePreviewModeUI();
+      }
+      clearTimeout(alertDebounceTimer);
+      alertDebounceTimer = setTimeout(() => updatePreview(), 180);
+    }
+
+    async function updatePreview() {
+      const t0 = performance.now();
+      const ph = document.getElementById('previewPlaceholder');
+      const img = document.getElementById('previewImg');
+      const page = getCurrentPage();
+
+      const payload = (previewMode === 'alert')
+        ? {
+            template: "1x1",
+            slots: { full: "alert" },
+            city: currentCity,
+            alert: getAlertPayload()
+          }
+        : {
+            template: page.template,
+            slots: page.slots,
+            city: currentCity,
+            alert: getAlertPayloadIfNeeded()
+          };
+
+      try {
+        const resp = await fetch('/api/preview_generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (resp.ok) {
+          const blob = await resp.blob();
+          const t1 = performance.now();
+          document.getElementById('renderTime').textContent = `${Math.round(t1 - t0)} ms`;
+          document.getElementById('fileSize').textContent = `${(blob.size / 1024).toFixed(1)} KB`;
+          img.src = URL.createObjectURL(blob);
+          ph.classList.add('hidden');
+          img.classList.remove('hidden');
+        } else {
+          ph.classList.remove('hidden');
+          img.classList.add('hidden');
+          ph.textContent = `预览渲染失败 (HTTP ${resp.status})`;
+        }
+      } catch (err) {
+        ph.classList.remove('hidden');
+        img.classList.add('hidden');
+        ph.textContent = `预览渲染失败: ${err}`;
+      }
+    }
+
+    async function onDisplayModeChange() {
+      const modeSel = document.getElementById('displayModeSelect');
+      const intSel = document.getElementById('carouselIntervalSelect');
+      const intBox = document.getElementById('carouselIntervalBox');
+      const mode = modeSel ? modeSel.value : 'carousel';
+      const intervalSec = intSel ? (parseInt(intSel.value) || 60) : 60;
+      if (intBox) {
+        intBox.style.opacity = mode === 'carousel' ? '1' : '0.4';
+      }
+      try {
+        await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({ mode, carousel_interval_sec: intervalSec })
+        });
+        showToast(mode === 'carousel' ? `✓ 已切换为自动轮播模式（每 ${intervalSec} 秒翻页）` : '✓ 已切换为手动翻页模式');
+      } catch {}
+    }
+
+    async function pushToDevice() {
+      const btn = document.getElementById('pushBtn');
+      const lbl = document.getElementById('pushBtnLabel');
+      btn.disabled = true;
+      if (lbl) lbl.textContent = "⏳ 正在保存并发布...";
+
+      const page = getCurrentPage();
+      const modeSel = document.getElementById('displayModeSelect');
+      const intSel = document.getElementById('carouselIntervalSelect');
+      const mode = modeSel ? modeSel.value : 'carousel';
+      const carousel_interval_sec = intSel ? (parseInt(intSel.value) || 60) : 60;
+
+      const cleanPages = dashboardPages.map((p, i) => ({
+        id: `page_${i + 1}`,
+        title: `第 ${i + 1} 页`,
+        template: p.template,
+        slots: p.slots
+      }));
+
+      try {
+        const resp = await fetch('/api/push_live', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({
+            mode,
+            carousel_interval_sec,
+            template: page.template,
+            slots: page.slots,
+            pages: cleanPages,
+            active_page_index: activePageIndex,
+            city: currentCity,
+            alert: getAlertPayloadIfNeeded()
+          })
+        });
+        if (resp.status === 401) {
+          const det = document.getElementById('apiTokenDetails');
+          if (det) { det.classList.remove('hidden'); det.open = true; }
+        }
+        let data = {};
+        try {
+          data = await resp.json();
+        } catch {}
+        if (resp.ok && data.status === 'ok') {
+          showToast(`✓ 已发布全部 ${data.page_count || cleanPages.length} 页看板 (${data.size_kb} KB)`);
+          refreshDeviceStatus();
+        } else {
+          showToast(`! 发布失败: ${data.detail || data.message || ('HTTP ' + resp.status)}`, true);
+        }
+      } catch (err) {
+        showToast(`! 请求异常: ${err}`, true);
+      } finally {
+        btn.disabled = false;
+        renderPageTabs();
+      }
+    }
+
+    // === P0 Plugin: ICS Agenda & Countdowns Config ===
+    function renderAgendaConfigList() {
+      const box = document.getElementById('agendaItemsContainer');
+      box.innerHTML = "";
+      currentAgendaItems.forEach((it, idx) => {
+        const row = document.createElement('div');
+        row.className = "flex items-center space-x-1.5 bg-white p-1.5 rounded-lg border border-indigo-100";
+        row.innerHTML = `
+          <input type="text" value="${it.title || ''}" placeholder="日程或纪念日名称" onchange="currentAgendaItems[${idx}].title=this.value" class="flex-1 bg-slate-50 border border-slate-300 text-xs rounded px-2 py-1 font-medium">
+          <input type="text" value="${it.date || '+0'}" placeholder="日期(+N/MM-DD)" onchange="currentAgendaItems[${idx}].date=this.value" class="w-24 bg-slate-50 border border-slate-300 text-xs rounded px-1.5 py-1 font-mono text-center">
+          <input type="text" value="${it.time || '全天'}" placeholder="时间" onchange="currentAgendaItems[${idx}].time=this.value" class="w-14 bg-slate-50 border border-slate-300 text-xs rounded px-1 py-1 font-mono text-center">
+          <label class="flex items-center space-x-0.5 text-[10px] text-indigo-800 font-bold cursor-pointer shrink-0" title="设为顶部重点倒数日">
+            <input type="checkbox" ${it.is_countdown ? 'checked' : ''} onchange="currentAgendaItems[${idx}].is_countdown=this.checked" class="rounded text-indigo-600">
+            <span>★倒数</span>
+          </label>
+          <button type="button" onclick="removeAgendaItemRow(${idx})" class="text-slate-400 hover:text-rose-600 font-bold px-1">×</button>
+        `;
+        box.appendChild(row);
+      });
+    }
+
+    function addAgendaItemRow() {
+      currentAgendaItems.push({ title: "新日程或纪念日", date: "+3", time: "14:00", is_countdown: false });
+      renderAgendaConfigList();
+    }
+
+    function removeAgendaItemRow(idx) {
+      currentAgendaItems.splice(idx, 1);
+      renderAgendaConfigList();
+    }
+
+    async function saveAgendaPluginConfig() {
+      const rawUrls = document.getElementById('agendaIcsUrls').value || '';
+      const ics_urls = rawUrls.split('\n').map(s => s.trim()).filter(Boolean);
+      const resp = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          plugins: {
+            agenda: {
+              enabled: true,
+              ics_urls,
+              items: currentAgendaItems
+            }
+          }
+        })
+      });
+      if (resp.ok) {
+        showToast('✓ P0 外部日历 (ICS) 与倒数日配置已更新');
+        updatePreview();
+      }
+    }
+
+    // === Weather Data Source Config ===
+    function onQuickCitySelect(val) {
+      if (val !== 'custom') {
+        document.getElementById('cityInput').value = val;
+        saveWeatherCity();
+      } else {
+        document.getElementById('cityInput').focus();
+      }
+    }
+
+    async function saveWeatherCity() {
+      const city = document.getElementById('cityInput').value.trim();
+      if (!city) return;
+      currentCity = city;
+      const resp = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ city })
+      });
+      if (resp.ok) {
+        showToast(`✓ 天气数据源已切换为: ${city}`);
+        updatePreview();
+      }
+    }
+
+    // === Sensors Data Source Config ===
+    function renderSensorConfigList() {
+      const box = document.getElementById('sensorListContainer');
+      box.innerHTML = "";
+      currentSensors.forEach((s, idx) => {
+        const row = document.createElement('div');
+        row.className = "flex items-center space-x-1.5";
+        row.innerHTML = `
+          <input type="text" value="${s.name || ''}" placeholder="房间/指标名称" onchange="currentSensors[${idx}].name=this.value" class="flex-1 bg-white border border-slate-300 text-xs rounded-lg px-2 py-1.5 font-medium">
+          <input type="text" value="${s.display || ''}" placeholder="数值 (或 HA 实体)" onchange="currentSensors[${idx}].display=this.value" class="w-28 bg-white border border-slate-300 text-xs rounded-lg px-2 py-1.5 font-mono">
+          <button type="button" onclick="removeSensorRow(${idx})" class="text-slate-400 hover:text-rose-600 font-bold px-1.5">×</button>
+        `;
+        box.appendChild(row);
+      });
+    }
+
+    function addSensorRow() {
+      currentSensors.push({ id: "", name: "新环境指标", display: "22.5 °C" });
+      renderSensorConfigList();
+    }
+
+    function removeSensorRow(idx) {
+      currentSensors.splice(idx, 1);
+      renderSensorConfigList();
+    }
+
+    async function saveSensorsConfig() {
+      const resp = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ sensors: currentSensors })
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        currentSensors = data.sensors || currentSensors;
+        renderSensorConfigList();
+        showToast('✓ 环境传感器数据源已更新');
+        updatePreview();
+      }
+    }
+
+    // === Online Todo Manager ===
+    async function loadTodos() {
+      try {
+        const resp = await fetch('/api/todos');
+        const data = await resp.json();
+        renderTodoList(data.all_items || []);
+      } catch {}
+    }
+
+    function renderTodoList(items) {
+      const box = document.getElementById('todoListContainer');
+      box.innerHTML = "";
+      if (!items.length) {
+        box.innerHTML = `<div class="text-xs text-slate-400 py-2 text-center">暂无待办事项</div>`;
+        return;
+      }
+      items.forEach((it, idx) => {
+        const row = document.createElement('div');
+        row.className = "flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs";
+        row.innerHTML = `
+          <label class="flex items-center space-x-2 cursor-pointer flex-1 truncate pr-2">
+            <input type="checkbox" ${it.done ? 'checked' : ''} onchange="toggleTodo(${it.id})" class="rounded border-slate-400 text-slate-900 focus:ring-0">
+            <span class="${it.done ? 'line-through text-slate-400' : 'font-medium text-slate-800'} truncate">${idx + 1}. ${it.text}</span>
+          </label>
+          <button onclick="deleteTodo(${it.id})" class="text-slate-400 hover:text-rose-600 font-bold px-1">×</button>
+        `;
+        box.appendChild(row);
+      });
+    }
+
+    async function addTodo() {
+      const input = document.getElementById('newTodoInput');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = "";
+      const resp = await fetch('/api/todos/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ text })
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        renderTodoList(data.all_items || []);
+        updatePreview();
+      }
+    }
+
+    async function toggleTodo(id) {
+      const resp = await fetch('/api/todos/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ id })
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        renderTodoList(data.all_items || []);
+        updatePreview();
+      }
+    }
+
+    async function deleteTodo(id) {
+      const resp = await fetch('/api/todos/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ id })
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        renderTodoList(data.all_items || []);
+        updatePreview();
+      }
+    }
+
+    async function clearDoneTodos() {
+      const resp = await fetch('/api/todos/clear', {
+        method: 'POST',
+        headers: authHeaders()
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        renderTodoList(data.all_items || []);
+        updatePreview();
+      }
+    }
+
+    // === Device Status Polling ===
+    async function refreshDeviceStatus() {
+      const dot = document.getElementById('deviceDot');
+      const txt = document.getElementById('deviceStatusText');
+      try {
+        const resp = await fetch('/api/device_status');
+        const data = await resp.json();
+        if (data.auth_required) {
+          const det = document.getElementById('apiTokenDetails');
+          if (det) det.classList.remove('hidden');
+        }
+        if (data.pull_active || data.online) {
+          dot.className = 'w-2.5 h-2.5 bg-emerald-400 rounded-full mr-2 animate-pulse';
+          txt.textContent = `终端在线`;
+        } else {
+          dot.className = 'w-2.5 h-2.5 bg-amber-500 rounded-full mr-2';
+          txt.textContent = `终端待机`;
+        }
+      } catch {
+        dot.className = 'w-2.5 h-2.5 bg-slate-500 rounded-full mr-2';
+        txt.textContent = '终端状态未知';
+      }
+    }
+    refreshDeviceStatus();
+    setInterval(refreshDeviceStatus, 10000);
+
+    // === Alert / Instant Notification ===
+    async function sendAlert() {
+      const title = document.getElementById('alertTitle').value;
+      const text = document.getElementById('alertText').value;
+      const sender = document.getElementById('alertSender').value;
+      const duration = parseInt(document.getElementById('alertDuration').value) || 15;
+
+      if (!text.trim()) {
+        showToast('! 请输入通知正文', true);
+        return;
+      }
+
+      setPreviewMode('alert');
+
+      try {
+        const resp = await fetch('/api/alert/push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({ title, text, sender, duration })
+        });
+        const data = await resp.json();
+        if (resp.ok && data.status === 'ok') {
+          showToast(`✓ 大字通知已发布（展示 ${data.alert.duration_min} 分钟）`);
+        } else {
+          showToast(`! 通知发布失败: ${data.detail || data.message}`, true);
+        }
+      } catch (err) {
+        showToast(`! 请求异常: ${err}`, true);
+      }
+    }
+
+    async function dismissAlert() {
+      setPreviewMode('dashboard');
+      try {
+        const resp = await fetch('/api/alert/dismiss', { method: 'POST', headers: authHeaders() });
+        const data = await resp.json();
+        showToast(`✓ ${data.message}`);
+      } catch (err) {
+        showToast(`! 解除失败: ${err}`, true);
+      }
+    }
+
+    // Load initial saved config from server
+    async function initStudio() {
+      try {
+        const resp = await fetch('/api/config');
+        if (resp.ok) {
+          const cfg = await resp.json();
+          if (cfg.auth_required) {
+            const det = document.getElementById('apiTokenDetails');
+            if (det) det.classList.remove('hidden');
+          }
+          currentCity = cfg.city || "Beijing";
+          document.getElementById('cityInput').value = currentCity;
+          const sel = document.getElementById('cityQuickSelect');
+          if ([...sel.options].some(o => o.value === currentCity)) {
+            sel.value = currentCity;
+          } else {
+            sel.value = 'custom';
+          }
+
+          pluginsConfig = cfg.plugins || {};
+          pluginCatalog = cfg.plugin_catalog || [];
+          enabledPluginIds = cfg.enabled_plugins || ["agenda", "sensors"];
+          renderPluginToggles();
+
+          const agendaCfg = pluginsConfig.agenda || {};
+          document.getElementById('agendaIcsUrls').value = (agendaCfg.ics_urls || []).join('\n');
+          currentAgendaItems = agendaCfg.items || [];
+          renderAgendaConfigList();
+
+          currentSensors = cfg.sensors || [];
+          renderSensorConfigList();
+
+          if (cfg.dashboard) {
+            const modeSel = document.getElementById('displayModeSelect');
+            const intSel = document.getElementById('carouselIntervalSelect');
+            const intBox = document.getElementById('carouselIntervalBox');
+            if (modeSel && cfg.dashboard.mode) {
+              modeSel.value = cfg.dashboard.mode;
+            }
+            if (intSel && cfg.dashboard.carousel_interval_sec) {
+              const secStr = String(cfg.dashboard.carousel_interval_sec);
+              if ([...intSel.options].some(o => o.value === secStr)) {
+                intSel.value = secStr;
+              }
+            }
+            if (intBox && modeSel) {
+              intBox.style.opacity = modeSel.value === 'carousel' ? '1' : '0.4';
+            }
+            if (Array.isArray(cfg.dashboard.pages) && cfg.dashboard.pages.length > 0) {
+              dashboardPages = cfg.dashboard.pages.map(p => ({
+                id: p.id,
+                title: p.title,
+                template: p.template || "2_1",
+                slots: { ...(DEFAULT_SLOTS[p.template || "2_1"] || {}), ...(p.slots || {}) },
+                slotMemory: {}
+              }));
+            }
+          }
+        }
+      } catch {}
+
+      renderPageTabs();
+      updateTemplateButtonStyles();
+      renderVisualSlotGrid();
+      updateDataSourceConfigPanels();
+      loadTodos();
+      updatePreview();
+    }
+
+    initStudio();
+  </script>
+</body>
+</html>

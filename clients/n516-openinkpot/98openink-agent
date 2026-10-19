@@ -1,0 +1,6 @@
+#!/bin/sh
+# /etc/X11/Xsession.d/98openink-agent
+# 系统重启进入 X11 桌面后，若 USB 网络处于连接状态，自动在后台启动 OpenInk 守护进程
+if [ -x /usr/local/bin/openink-agent.sh ]; then
+    /usr/local/bin/openink-agent.sh >/dev/null 2>&1 &
+fi

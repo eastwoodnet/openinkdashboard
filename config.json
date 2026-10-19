@@ -1,0 +1,114 @@
+{
+  "city": "Beijing",
+  "dashboard": {
+    "mode": "carousel",
+    "carousel_interval_sec": 60,
+    "template": "2_1",
+    "slots": {
+      "top_left": "calendar",
+      "bottom_left": "weather",
+      "right": "todo"
+    },
+    "pages": [
+      {
+        "id": "page_1",
+        "title": "第 1 页 · 主看板",
+        "template": "2_1",
+        "slots": {
+          "top_left": "calendar",
+          "bottom_left": "weather",
+          "right": "todo"
+        }
+      },
+      {
+        "id": "page_2",
+        "title": "第 2 页 · 日程倒数",
+        "template": "1x2",
+        "slots": {
+          "left": "agenda",
+          "right": "todo"
+        }
+      }
+    ]
+  },
+  "plugins": {
+    "agenda": {
+      "enabled": true,
+      "ics_urls": [],
+      "items": [
+        {
+          "title": "OpenInk v1.1 里程碑发布",
+          "date": "+6",
+          "time": "全天",
+          "is_countdown": true
+        },
+        {
+          "title": "架构评审与墨水屏实机联调",
+          "date": "+0",
+          "time": "15:00",
+          "is_countdown": false
+        },
+        {
+          "title": "外部 ICS 日历同步功能验收",
+          "date": "+1",
+          "time": "10:30",
+          "is_countdown": false
+        },
+        {
+          "title": "家庭周末出行计划",
+          "date": "+4",
+          "time": "09:00",
+          "is_countdown": false
+        },
+        {
+          "title": "每月固定账单与发薪日",
+          "date": "+12",
+          "time": "全天",
+          "is_countdown": true
+        }
+      ]
+    },
+    "sensors": {
+      "enabled": true
+    }
+  },
+  "device": {
+    "host": "192.168.111.1",
+    "port": 22,
+    "user": "root",
+    "password_env": "N516_PASSWORD",
+    "ssh_alias": "n516",
+    "dashboard_dir": "/tmp/dashboard"
+  },
+  "todos_file": "todos.txt",
+  "font_family": "WenQuanYi Micro Hei, Segoe UI Emoji, Maple Mono NF CN, Noto Color Emoji, Segoe UI Symbol, sans-serif",
+  "card_shadow": true,
+  "shadow_offset": 5,
+  "shadow_gray": 0.42,
+  "homeassistant": {
+    "url": "",
+    "token_env": "HA_TOKEN",
+    "sensors": [
+      {
+        "id": "sensor.workroom_temperature",
+        "name": "工作间温度"
+      },
+      {
+        "id": "sensor.workroom_humidity",
+        "name": "工作间湿度"
+      },
+      {
+        "id": "sensor.kids_room_temperature",
+        "name": "儿童房温度"
+      },
+      {
+        "id": "sensor.kids_room_humidity",
+        "name": "儿童房湿度"
+      },
+      {
+        "id": "sensor.zhi_neng_yao_kong_temperature",
+        "name": "遥控器温度"
+      }
+    ]
+  }
+}

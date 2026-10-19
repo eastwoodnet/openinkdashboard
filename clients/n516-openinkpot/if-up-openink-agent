@@ -1,0 +1,8 @@
+#!/bin/sh
+# /etc/network/if-up.d/openink-agent
+# 当汉王 N516 的 USB 网络 (usb0) 启动时，自动在后台拉起 OpenInk 长轮询守护进程
+if [ "$IFACE" = "usb0" ] || [ -z "$IFACE" ]; then
+    if [ -x /usr/local/bin/openink-agent.sh ]; then
+        DISPLAY=:0 /usr/local/bin/openink-agent.sh >/dev/null 2>&1 &
+    fi
+fi

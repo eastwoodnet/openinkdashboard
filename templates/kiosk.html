@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>OpenInk Web Kiosk · 墨水屏通用拉取终端</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #111;
+      color: #eee;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+    .kiosk-stage {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    #kioskImg {
+      max-width: 100vw;
+      max-height: 100vh;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      background: #fff;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+    }
+    .hud-bar {
+      position: fixed;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      padding: 6px 14px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      pointer-events: none;
+    }
+    body:hover .hud-bar, .hud-bar.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .hud-btn {
+      background: rgba(255, 255, 255, 0.12);
+      border: none;
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .hud-btn:hover { background: rgba(255, 255, 255, 0.24); }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      display: inline-block;
+    }
+  </style>
+</head>
+<body>
+  <div class="kiosk-stage" onclick="nextPage()">
+    <img id="kioskImg" alt="OpenInk Kiosk Display" src="" />
+  </div>
+
+  <div id="hudBar" class="hud-bar visible">
+    <span class="dot" id="connDot"></span>
+    <span id="pageIndicator">正在连接 OpenInk...</span>
+    <button class="hud-btn" onclick="event.stopPropagation(); prevPage()">◀ 上一页</button>
+    <button class="hud-btn" onclick="event.stopPropagation(); nextPage()">下一页 ▶</button>
+    <button class="hud-btn" onclick="event.stopPropagation(); sendEvent('KEY_ENTER')">🔄 刷新/消警</button>
+    <button class="hud-btn" onclick="event.stopPropagation(); toggleFullscreen()">⛶ 全屏</button>
+  </div>
+
+  <script>
+    let currentVersion = "";
+    let playlist = [];
+    let pageIndex = 0;
+    let displayMode = "carousel";
+    let carouselIntervalSec = 60;
+    let alertState = { active: false, hash: "", url: "" };
+    let lastAlertHash = "";
+    let carouselTimer = null;
+
+    setTimeout(() => {
+      document.getElementById('hudBar').classList.remove('visible');
+    }, 4000);
+
+    function playBeep() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.25);
+      } catch (e) {}
+    }
+
+    function renderActiveScreen() {
+      const img = document.getElementById('kioskImg');
+      const ind = document.getElementById('pageIndicator');
+      if (alertState && alertState.active && alertState.url) {
+        img.src = alertState.url;
+        ind.textContent = `🚨 紧急插播通知 (${alertState.title || '提醒'}) · 按回车解除`;
+        if (alertState.hash && alertState.hash !== lastAlertHash) {
+          lastAlertHash = alertState.hash;
+          playBeep();
+        }
+        return;
+      }
+      if (!playlist.length) return;
+      if (pageIndex >= playlist.length) pageIndex = 0;
+      if (pageIndex < 0) pageIndex = playlist.length - 1;
+      const item = playlist[pageIndex];
+      img.src = item.url;
+      ind.textContent = `${item.title || ('第 ' + item.index + ' 页')} (${pageIndex + 1}/${playlist.length}) · ${displayMode === 'carousel' ? ('自动轮播 ' + carouselIntervalSec + 's') : '手动模式'} · 数字键1-9勾选待办`;
+    }
+
+    function resetCarouselTimer() {
+      if (carouselTimer) clearInterval(carouselTimer);
+      if (displayMode === 'carousel' && playlist.length > 1 && (!alertState || !alertState.active)) {
+        carouselTimer = setInterval(() => {
+          pageIndex = (pageIndex + 1) % playlist.length;
+          renderActiveScreen();
+        }, Math.max(5, carouselIntervalSec) * 1000);
+      }
+    }
+
+    function nextPage() {
+      if (alertState && alertState.active) return;
+      if (playlist.length > 1) {
+        pageIndex = (pageIndex + 1) % playlist.length;
+        renderActiveScreen();
+        resetCarouselTimer();
+      }
+    }
+
+    function prevPage() {
+      if (alertState && alertState.active) return;
+      if (playlist.length > 1) {
+        pageIndex = (pageIndex - 1 + playlist.length) % playlist.length;
+        renderActiveScreen();
+        resetCarouselTimer();
+      }
+    }
+
+    async function syncManifest() {
+      const resp = await fetch('/api/v1/display?device_id=web_kiosk&orientation=landscape');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      currentVersion = data.version || "";
+      displayMode = data.mode || "carousel";
+      carouselIntervalSec = data.carousel_interval_sec || 60;
+      playlist = data.playlist || [];
+      alertState = data.alert || { active: false };
+      renderActiveScreen();
+      resetCarouselTimer();
+    }
+
+    async function sendEvent(key) {
+      try {
+        await fetch(`/api/v1/event?device_id=web_kiosk&key=${encodeURIComponent(key)}`);
+      } catch (e) {}
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown') {
+        nextPage();
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
+        prevPage();
+      } else if (e.key >= '1' && e.key <= '9') {
+        sendEvent(`KEY_${e.key}`);
+      } else if (e.key === '0') {
+        sendEvent('KEY_0');
+      } else if (e.key === 'Enter') {
+        sendEvent('KEY_ENTER');
+      } else if (e.key === 'f' || e.key === 'F') {
+        toggleFullscreen();
+      }
+    });
+
+    async function runLongPollLoop() {
+      const dot = document.getElementById('connDot');
+      await syncManifest();
+      while (true) {
+        try {
+          dot.style.background = '#10b981';
+          const waitResp = await fetch(`/api/v1/wait?device_id=web_kiosk&version=${encodeURIComponent(currentVersion)}&timeout=60`);
+          if (waitResp.ok) {
+            const waitData = await waitResp.json();
+            if (waitData.changed) {
+              await syncManifest();
+            }
+          } else {
+            await new Promise(r => setTimeout(r, 3000));
+          }
+        } catch (err) {
+          dot.style.background = '#f43f5e';
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      }
+    }
+
+    runLongPollLoop();
+  </script>
+</body>
+</html>
