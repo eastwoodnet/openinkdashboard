@@ -1,5 +1,7 @@
 # OpenInk · 通用墨水屏看板与插件编排系统
 
+[English](README_EN.md) | [简体中文](README.md)
+
 **OpenInk (v1.2)** 是一套面向电子墨水屏（E-Ink）终端的高性能自建看板服务（BYOS）与可视化排版系统。基于 **Python Cairo/Pango 几何矢量渲染引擎** 与 **模块化外部插件架构**，提供多页版式自由编排、秒级通用 HTTP 长轮询增量同步、双模自动轮播与终端交互响应。
 
 ---
@@ -24,6 +26,9 @@
    - `GET/POST /api/v1/event`：终端物理按键/触控回调（勾选待办、清理完成项、解除通知或刷新数据）。
    - `GET /kiosk`：零安装全屏 Web Kiosk 终端，支持键盘翻页、全屏模式与待办快捷勾选。
 
+4. **灵活端口配置与多服务并存 (`OPENINK_PORT`)**
+   - 原生支持通过环境变量 `OPENINK_PORT` 指定运行端口（默认推荐 `8080`），可与主机上已运行的其他 8000 端口服务（如 `esp32-gateway`、其他 Web 中继）在同一台 Linux/Armbian 主机上零冲突共存。
+
 ---
 
 ## 🚀 部署指南
@@ -33,11 +38,11 @@
 系统要求：Linux / macOS，Python 3.10+，并具备 `cairo`、`pango` 底层图形库。
 
 ```bash
-# Debian / Ubuntu 系环境依赖
-sudo apt update && sudo apt install -y python3-venv libcairo2 libpango-1.0-0 libpangocairo-1.0-0 fonts-wqy-microhei
+# Debian / Ubuntu / Armbian 环境依赖
+sudo apt update && sudo apt install -y python3-venv libcairo2 libpango-1.0-0 libpangocairo-1.0-0 gir1.2-pango-1.0 python3-gi-cairo fonts-wqy-microhei
 
-# 创建虚拟环境并安装依赖
-python3 -m venv .venv
+# 创建虚拟环境（推荐使用 --system-site-packages 继承系统 Cairo/GI 绑定）
+python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
@@ -45,29 +50,30 @@ pip install -r requirements.txt
 ### 2. 启动服务端
 
 ```bash
-# 局域网服务启动（默认绑定 0.0.0.0:8000）
-OPENINK_BIND=0.0.0.0 .venv/bin/python3 web_studio.py
+# 本地测试启动（默认监听 0.0.0.0:8080）
+OPENINK_BIND=0.0.0.0 OPENINK_PORT=8080 .venv/bin/python3 web_studio.py
 ```
 
-- **OpenInk Studio 管理面板**：`http://<主机IP>:8000`
-- **Web Kiosk 全屏终端**：`http://<主机IP>:8000/kiosk`
+- **OpenInk Studio 管理面板**：`http://<主机IP>:8080`
+- **Web Kiosk 全屏终端**：`http://<主机IP>:8080/kiosk`
 
-### 3. 配置 Systemd 常驻服务 (推荐生产环境)
+### 3. 配置 Systemd 常驻服务 (生产环境推荐)
 
 创建 `/etc/systemd/system/openink.service`：
 
 ```ini
 [Unit]
-Description=OpenInk E-Ink Display Server
+Description=OpenInk E-Ink Display Server & Studio
 After=network.target
 
 [Service]
 Type=simple
-User=pi
+User=root
 WorkingDirectory=/opt/openink
 Environment=OPENINK_BIND=0.0.0.0
+Environment=OPENINK_PORT=8080
 Environment=OPENINK_API_TOKEN=
-ExecStart=/opt/openink/.venv/bin/python3 /opt/openink/web_studio.py
+ExecStart=/opt/openink/venv/bin/python3 /opt/openink/web_studio.py
 Restart=always
 RestartSec=5
 
@@ -83,9 +89,9 @@ sudo systemctl status openink
 
 ---
 
-## 📱 终端接入与网络配置说明
+## 📱 终端接入与硬件适配说明
 
-### 1. 汉王 N516 (OpenInkpot) 终端一键部署
+### 1. 汉王 N516 (OpenInkpot · USB Network) 终端一键部署
 针对 N516 USB Network 终端，项目提供了 100% 重启持久化与断网休眠省电的守护进程：
 
 ```bash
@@ -97,15 +103,28 @@ sudo systemctl status openink
 - **150ms 无闪原地刷新**：利用双缓冲机制与 `NEXT_IMAGE` 步进，绕过 madeye 内存文件缓存，无需重启窗口即可原地刷新。
 - **智能休眠省电**：仅当 USB 处于联网状态 (`carrier=1`) 时保持拉取与轮播；断开 USB 时守护进程自动退出，设备进入原生硬件深度休眠，充当纯粹的电子书。
 
-### 2. Wi-Fi 无线墨水屏终端 (Kindle / ESP32 / Android 墨水屏 / TRMNL)
-设备通过自带 Wi-Fi 直连 OpenInk 服务端：
-- 定时或长轮询请求：`GET http://<服务器IP>:8000/api/v1/display?device_id=<设备名>`
-- 根据返回 JSON 中的 `playlist[].url` 下载对应灰度 PNG。
-- 若部署在公网，配合下方 API Token 机制实现安全鉴权。
+### 2. 亚马逊 Kindle 与通用 Wi-Fi 墨水屏终端说明
+
+> [!NOTE]
+> **Kindle 通用性说明**：本项目初期主要基于汉王 N516 进行实机联调，作者暂未直接使用 Kindle 机器进行深度验证。但从架构设计上，OpenInk 采用了**设备无关的通用 HTTP 拉取协议（Universal Pull Protocol）**。只要在已越狱的 Kindle 或其他 Wi-Fi 墨水屏（如 Android 电纸书、ESP32 墨水屏板、TRMNL）上维护一个极简的定时拉取脚本，并填入服务端的 IP 与端口，**大概率即可完全通用**！
+
+**Kindle 端极简运行思路**：
+1. **网络连接**：Kindle 自带 Wi-Fi 网卡，保持接入局域网。
+2. **定时拉取脚本**：使用 Kindle 内置的 `curl` 或 `wget` 定时/休眠唤醒请求：
+   ```sh
+   # 1. 获取播放清单 JSON，提取图片 URL
+   JSON=$(curl -s "http://<服务器IP>:8080/api/v1/display?device_id=kindle")
+   IMG_URL=$(echo "$JSON" | grep -o 'http[^"]*landscape[^"]*' | head -n 1)
+
+   # 2. 下载 16 级灰阶画面并刷屏展示
+   curl -s "$IMG_URL" -o /tmp/screen.png
+   eips -g /tmp/screen.png
+   ```
+3. **安全鉴权**：若服务部署在外网，只需在请求时追加 `?token=your-secret-token` 或请求头 `X-API-Token`。
 
 ---
 
-## 🔒 API Token 鉴权机制
+## 🔒 外网反向代理与 API Token 鉴权
 
 OpenInk 默认采用 **局域网免配置模式**（未设置 `OPENINK_API_TOKEN` 时免密访问，Web 面板自动隐藏密钥输入框）。
 
@@ -125,13 +144,14 @@ export OPENINK_API_TOKEN="your-secure-token"
 
 ## 📢 即时大字通知推送 (Instant Alert API)
 
-OpenInk 支持**毫秒级插播即时大字通知**。当外部系统（如 Home Assistant 自动化、企业微信/飞书 Webhook、监控告警脚本或 iOS 快捷指令）发送通知请求时，服务端会立即生成专用的 16 级灰阶大字画报（居中大字标题、自适应正文字号、来源徽标与有效倒计时），并通过 HTTP 长轮询挂起点毫秒级唤醒墨水屏终端打断轮播，立即呈现通知。
+OpenInk 支持**毫秒级插播即时大字通知**。当外部系统（如人在室外时手机触发、Home Assistant 自动化、企业微信/飞书 Webhook、监控告警脚本或 iOS 快捷指令）发送通知请求时，服务端会立即生成专用的 16 级灰阶大字画报（居中大字标题、自适应正文字号、来源徽标与有效倒计时），并通过 HTTP 长轮询挂起点毫秒级唤醒墨水屏终端打断轮播，立即呈现通知。
 
 ### 1. 标准 JSON 格式推送 (`POST /api/alert/push`)
 
 ```bash
-curl -X POST http://<主机IP>:8000/api/alert/push \
+curl -X POST http://<主机IP>:8080/api/alert/push \
   -H "Content-Type: application/json" \
+  -H "X-API-Token: your-secure-token" \
   -d '{
     "title": "会议提醒",
     "text": "10分钟后在第3会议室召开敏捷评审会，请携带笔记本。",
@@ -142,35 +162,33 @@ curl -X POST http://<主机IP>:8000/api/alert/push \
 
 **请求字段说明**：
 - `title` *(string)*: 通知大标题（例如 `"桌面备忘"`、`"门铃提醒"`、`"运维告警"`）。
-- `text` *(string, 必选)*: 通知正文内容，自动计算字号与折行排版。
+- `text` *(string, 必选)*: 通知正文内容，自动计算字号与优雅折行排版。
 - `sender` *(string, 可选)*: 来源徽标，默认 `"OpenInk"`。
 - `duration` *(int, 可选)*: 保持时长（分钟），默认 15 分钟。超时后设备自动恢复原看板轮播。
 
 ### 2. 单行快捷 GET 请求 (`GET /api/alert/quick`)
 
-适合在浏览器书签、Home Assistant `rest_command` 或简易 Webhook 中直接调用：
+适合在**手机浏览器书签**、**iOS 快捷指令（捷径）**、**Tasker** 或 **Home Assistant `rest_command`** 中直接调用：
 
 ```bash
 # 推荐使用 --data-urlencode（自动处理中文字符转义）
-curl -G "http://<主机IP>:8000/api/alert/quick" \
+curl -G "http://<主机IP>:8080/api/alert/quick" \
   --data-urlencode "title=快递到达" \
   --data-urlencode "text=您的顺丰快递已投递至蜂巢快递柜" \
   --data-urlencode "sender=菜鸟驿站" \
-  --data-urlencode "duration=20"
+  --data-urlencode "duration=20" \
+  --data-urlencode "token=your-secure-token"
 ```
 
 ### 3. 手动解除即时通知 (`POST /api/alert/dismiss` 或 物理按键)
 
 - **HTTP 接口解除**：
   ```bash
-  curl -X POST http://<主机IP>:8000/api/alert/dismiss
+  curl -X POST http://<主机IP>:8080/api/alert/dismiss -H "X-API-Token: your-secure-token"
   # 或快捷 GET 请求:
-  curl http://<主机IP>:8000/api/alert/dismiss
+  curl "http://<主机IP>:8080/api/alert/dismiss?token=your-secure-token"
   ```
-- **终端物理交互解除**：在 N516 或 Web Kiosk 终端上按下 `Enter` / `Return` / `空格键`，即可立即关闭当前通知并恢复主看板。
-
-> [!TIP]
-> **API Token 鉴权适配**：若服务端启用了 `OPENINK_API_TOKEN`，在 curl 时只需追加 Header `-H "X-API-Token: your-token"` 或在 URL 尾部添加 `?token=your-token` 即可。
+- **终端物理交互解除**：在汉王 N516 或 Web Kiosk 终端上按下 `Enter` / `Return` / `空格键`，即可立即关闭当前通知并恢复主看板轮播。
 
 ---
 
@@ -179,6 +197,7 @@ curl -G "http://<主机IP>:8000/api/alert/quick" \
 - **v1.2 (当前版本)**：
   - 架构全面解耦，去特定设备硬编码；
   - 通用拉取协议与 HTTP 长轮询秒级响应；
+  - 端口环境变量解耦 (`OPENINK_PORT`)，支持与现有 8000 端口服务无缝并存；
   - 自动轮播时间扩展至小时级（支持心跳式分段长轮询）；
   - Web Kiosk 零安装全屏终端。
 - **v1.3 (规划中 · 数码相框与照片轮播)**：
