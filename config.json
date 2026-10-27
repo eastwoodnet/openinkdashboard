@@ -2,7 +2,7 @@
   "city": "Beijing",
   "dashboard": {
     "mode": "carousel",
-    "carousel_interval_sec": 1800,
+    "carousel_interval_sec": 60,
     "template": "2_1",
     "slots": {
       "top_left": "calendar",

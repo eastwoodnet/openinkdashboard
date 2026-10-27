@@ -41,6 +41,7 @@ app = FastAPI(title="OpenInk Studio")
 
 API_TOKEN = os.environ.get("OPENINK_API_TOKEN", "")
 BIND_HOST = os.environ.get("OPENINK_BIND", "0.0.0.0")
+BIND_PORT = int(os.environ.get("OPENINK_PORT", "8080"))
 ASSETS_BASE_DIR = "/tmp/openink_assets"
 
 
@@ -963,4 +964,4 @@ def alert_dismiss_get(
 
 if __name__ == "__main__":
     _ensure_rendered()
-    uvicorn.run(app, host=BIND_HOST, port=8000, log_level="warning")
+    uvicorn.run(app, host=BIND_HOST, port=BIND_PORT, log_level="warning")
