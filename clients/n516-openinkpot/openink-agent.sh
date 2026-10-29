@@ -14,7 +14,7 @@
 #    无需 killall/重启 madeye 即可在 150ms 内原地无闪切换与更新画面。
 # ==============================================================================
 
-SERVER="${OPENINK_SERVER:-http://192.168.111.2:8000}"
+SERVER="${OPENINK_SERVER:-http://192.168.111.2:8080}"
 DEVICE_ID="${OPENINK_DEVICE_ID:-n516}"
 CACHE_DIR="/tmp/openink_cache"
 DASH_DIR="/tmp/dashboard"
