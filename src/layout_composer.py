@@ -208,8 +208,15 @@ class LayoutComposer:
         stride = surface.get_stride()
         img = Image.frombuffer("RGBA", (W, H), buf, "raw", "BGRA", stride, 1)
 
-        if rotate and self.profile.rotation == 90:
-            img = img.rotate(-90, expand=True)
+        if rotate:
+            if self.profile.rotation == 270:
+                img = img.transpose(Image.Transpose.ROTATE_90)
+            elif self.profile.rotation == 180:
+                img = img.transpose(Image.Transpose.ROTATE_180)
+            elif self.profile.rotation == 0:
+                pass
+            else:  # 90° (default for N516)
+                img = img.transpose(Image.Transpose.ROTATE_270)
 
         # 16-level grayscale compact quantization for N516
         gray_img = img.convert("L")

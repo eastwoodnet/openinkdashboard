@@ -25,6 +25,10 @@
       </div>
     </div>
     <div class="flex items-center space-x-2.5">
+      <button type="button" onclick="flipScreen180()" id="btnFlip180" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-full text-xs font-semibold transition shadow-sm flex items-center space-x-1" title="设备倒置或换方向时快速翻转 180°">
+        <span>🔄</span>
+        <span id="rotationStatusText">旋转 180°</span>
+      </button>
       <a href="/kiosk" target="_blank" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-full text-xs font-bold transition shadow-sm flex items-center space-x-1">
         <span>🖥️ Web Kiosk</span>
       </a>
@@ -1132,6 +1136,33 @@
     }
     refreshDeviceStatus();
     setInterval(refreshDeviceStatus, 10000);
+
+    // === Device Rotation (Flip 180°) ===
+    async function flipScreen180() {
+      const btn = document.getElementById('btnFlip180');
+      const label = document.getElementById('rotationStatusText');
+      if (btn) btn.disabled = true;
+      if (label) label.textContent = '正在旋转…';
+      try {
+        const resp = await fetch('/api/device/flip180', {
+          method: 'POST',
+          headers: authHeaders()
+        });
+        const res = await resp.json();
+        if (res.status === 'ok') {
+          showToast(`已旋转 180° (当前角度: ${res.rotation}°)`, false);
+          if (label) label.textContent = `旋转 180° (${res.rotation}°)`;
+        } else {
+          showToast(res.message || '旋转失败', true);
+          if (label) label.textContent = '旋转 180°';
+        }
+      } catch (err) {
+        showToast('请求失败: ' + err.message, true);
+        if (label) label.textContent = '旋转 180°';
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
 
     // === Alert / Instant Notification ===
     async function sendAlert() {

@@ -82,7 +82,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "user": "root",
         "password_env": "OPENINK_DEVICE_PASSWORD",
         "ssh_alias": "eink",
-        "dashboard_dir": "/tmp/dashboard"
+        "dashboard_dir": "/tmp/dashboard",
+        "rotation": 90
     },
     "todos_file": "todos.txt",
     "font_family": "WenQuanYi Micro Hei, Segoe UI Emoji, Maple Mono NF CN, Noto Color Emoji, Segoe UI Symbol, sans-serif",

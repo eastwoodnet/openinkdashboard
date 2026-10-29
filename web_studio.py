@@ -18,6 +18,7 @@ from fastapi import FastAPI, HTTPException, Response, Request, Query, Header
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel, Field
 import uvicorn
+from PIL import Image
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(BASE_DIR, "src"))
@@ -199,6 +200,24 @@ def _normalize_bucket(bucket: str) -> str:
     return "portrait"
 
 
+def _get_device_rotation() -> int:
+    cfg = load_config()
+    return int(cfg.get("device", {}).get("rotation", 90))
+
+
+def _rotate_image_for_device(img_landscape: Image.Image, rotation: Optional[int] = None) -> Image.Image:
+    if rotation is None:
+        rotation = _get_device_rotation()
+    if rotation == 270:
+        return img_landscape.transpose(Image.Transpose.ROTATE_90)
+    elif rotation == 180:
+        return img_landscape.transpose(Image.Transpose.ROTATE_180)
+    elif rotation == 0:
+        return img_landscape
+    else:  # 90° (default for N516)
+        return img_landscape.transpose(Image.Transpose.ROTATE_270)
+
+
 def _render_cached_pages(
     pages_data: Optional[List[Dict[str, Any]]] = None,
     city_override: Optional[str] = None,
@@ -237,7 +256,7 @@ def _render_cached_pages(
         img_landscape = composer.render_screen(p["template"], p["slots"], context, output_path=landscape_path, rotate=False)
         if rotate_portrait:
             from PIL import Image
-            img_rotated = img_landscape.transpose(Image.Transpose.ROTATE_270)
+            img_rotated = _rotate_image_for_device(img_landscape)
             img_rotated.save(portrait_path, optimize=True)
         else:
             img_landscape.save(portrait_path, optimize=True)
@@ -321,6 +340,11 @@ class ConfigUpdateRequest(BaseModel):
     pages: Optional[List[Dict[str, Any]]] = None
     plugins: Optional[Dict[str, Any]] = None
     sensors: Optional[List[Dict[str, str]]] = None
+    rotation: Optional[int] = None
+
+
+class DeviceRotationRequest(BaseModel):
+    rotation: int = Field(..., description="0, 90, 180, or 270")
 
 
 class AlertRequest(BaseModel):
@@ -635,6 +659,9 @@ def get_config_api():
             "slots": pages[0]["slots"],
             "pages": pages
         },
+        "device": {
+            "rotation": _get_device_rotation(),
+        },
         "plugins": cfg.get("plugins", {}),
         "plugin_catalog": PLUGIN_CATALOG,
         "enabled_plugins": get_enabled_plugin_ids(cfg),
@@ -700,6 +727,10 @@ def update_config_api(
         ha["sensors"] = req.sensors
         updates["homeassistant"] = ha
 
+    if req.rotation is not None and req.rotation in (0, 90, 180, 270):
+        updates.setdefault("device", {})["rotation"] = req.rotation
+        force_refresh = True
+
     if updates:
         save_config(updates)
 
@@ -719,6 +750,9 @@ def update_config_api(
             "slots": pages[0]["slots"],
             "pages": pages
         },
+        "device": {
+            "rotation": _get_device_rotation(),
+        },
         "plugins": new_cfg.get("plugins", {}),
         "plugin_catalog": PLUGIN_CATALOG,
         "enabled_plugins": get_enabled_plugin_ids(new_cfg),
@@ -726,6 +760,50 @@ def update_config_api(
         "agenda": ctx.get("agenda", {}),
         "weather": ctx.get("weather", {}),
         "version": display_manager.version,
+    }
+
+
+# =========================================================================
+# Device Rotation API (90° Standard vs 270° Inverted / 180° Flip)
+# =========================================================================
+
+@app.post("/api/device/rotation")
+def set_device_rotation_api(
+    req: DeviceRotationRequest,
+    token: Optional[str] = Query(None),
+    x_api_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    _check_token(x_api_token, authorization, token)
+    if req.rotation not in (0, 90, 180, 270):
+        raise HTTPException(status_code=400, detail="Rotation 必须为 0, 90, 180 或 270")
+    save_config({"device": {"rotation": req.rotation}})
+    res = _render_cached_pages(force_refresh=True)
+    return {
+        "status": "ok",
+        "rotation": req.rotation,
+        "message": f"设备旋转已设为 {req.rotation}°，已重新渲染并推送到墨水屏",
+        "version": res["version"]
+    }
+
+
+@app.post("/api/device/flip180")
+@app.get("/api/device/flip180")
+def flip_device_180_api(
+    token: Optional[str] = Query(None),
+    x_api_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    _check_token(x_api_token, authorization, token)
+    current_rot = _get_device_rotation()
+    new_rot = 270 if current_rot == 90 else 90
+    save_config({"device": {"rotation": new_rot}})
+    res = _render_cached_pages(force_refresh=True)
+    return {
+        "status": "ok",
+        "rotation": new_rot,
+        "message": f"已将屏幕旋转 180° (当前为 {new_rot}°)，已重新渲染并推送到墨水屏",
+        "version": res["version"]
     }
 
 
@@ -902,7 +980,7 @@ def alert_push(
         rotate=False
     )
     from PIL import Image
-    img_rotated = img_landscape.transpose(Image.Transpose.ROTATE_270)
+    img_rotated = _rotate_image_for_device(img_landscape)
     img_rotated.save(portrait_alert_png, optimize=True)
 
     display_manager.alert_hash = _file_md5_short(portrait_alert_png)
