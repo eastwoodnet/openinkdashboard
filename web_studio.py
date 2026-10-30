@@ -23,7 +23,7 @@ from PIL import Image
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(BASE_DIR, "src"))
 
-from config import load_config, save_config, get_secret, normalize_dashboard_pages
+from config import load_config, save_config, get_secret, normalize_dashboard_pages, sanitize_for_client
 from profiles import get_profile
 from layout_composer import LayoutComposer
 from calendar_info import get_calendar_info
@@ -255,7 +255,6 @@ def _render_cached_pages(
 
         img_landscape = composer.render_screen(p["template"], p["slots"], context, output_path=landscape_path, rotate=False)
         if rotate_portrait:
-            from PIL import Image
             img_rotated = _rotate_image_for_device(img_landscape)
             img_rotated.save(portrait_path, optimize=True)
         else:
@@ -662,7 +661,7 @@ def get_config_api():
         "device": {
             "rotation": _get_device_rotation(),
         },
-        "plugins": cfg.get("plugins", {}),
+        "plugins": sanitize_for_client(cfg.get("plugins", {})),
         "plugin_catalog": PLUGIN_CATALOG,
         "enabled_plugins": get_enabled_plugin_ids(cfg),
         "sensors": ctx.get("sensors", []),
@@ -753,7 +752,7 @@ def update_config_api(
         "device": {
             "rotation": _get_device_rotation(),
         },
-        "plugins": new_cfg.get("plugins", {}),
+        "plugins": sanitize_for_client(new_cfg.get("plugins", {})),
         "plugin_catalog": PLUGIN_CATALOG,
         "enabled_plugins": get_enabled_plugin_ids(new_cfg),
         "sensors": ctx.get("sensors", []),

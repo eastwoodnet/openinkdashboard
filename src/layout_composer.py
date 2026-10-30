@@ -22,6 +22,7 @@ from widgets.todo_widget import TodoWidget
 from widgets.sensor_widget import SensorWidget
 from widgets.focus_widget import FocusWidget, AlertWidget
 from widgets.agenda_widget import AgendaWidget
+from plugins import PLUGIN_WIDGETS
 
 # Global Registry of Available Widgets (Core + External Plugins)
 WIDGET_REGISTRY: Dict[str, WidgetBase] = {
@@ -31,7 +32,8 @@ WIDGET_REGISTRY: Dict[str, WidgetBase] = {
     "sensors": SensorWidget(),
     "focus": FocusWidget(),
     "alert": AlertWidget(),
-    "agenda": AgendaWidget()
+    "agenda": AgendaWidget(),
+    **PLUGIN_WIDGETS,
 }
 
 # Standard 5-Page N516 Dashboard Playlist
@@ -173,7 +175,7 @@ class LayoutComposer:
             h = slot_info["h"]
 
             widget_key = slot_assignments.get(sid)
-            widget = WIDGET_REGISTRY.get(widget_key)
+            widget = WIDGET_REGISTRY.get(widget_key) or PLUGIN_WIDGETS.get(widget_key)
 
             # === Neo-Brutalist Card Decorator ===
             card_r = 6.0

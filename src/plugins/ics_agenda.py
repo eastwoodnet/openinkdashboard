@@ -14,9 +14,11 @@ import re
 import time
 import urllib.request
 from typing import Dict, Any, List, Optional, Set, Tuple
+from config import validate_external_url, mask_url_for_log
 
 _ics_cache: Dict[str, Tuple[float, str]] = {}
 ICS_CACHE_TTL = 900  # 15 minutes cache for remote ICS URLs
+MAX_ICS_BYTES = 2 * 1024 * 1024  # 2MB safety cap
 
 
 def _unfold_ics_lines(raw_text: str) -> List[str]:
@@ -190,21 +192,25 @@ def _fetch_ics_url(url: str, force_refresh: bool = False) -> str:
 
     try:
         if clean_url.startswith(("http://", "https://")):
+            safe_url = validate_external_url(clean_url)
+            if not safe_url:
+                print(f"[ICS Plugin Warning] Blocked unsafe or invalid URL: {mask_url_for_log(clean_url)}")
+                return ""
             req = urllib.request.Request(
-                clean_url,
-                headers={"User-Agent": "OpenInk-CalendarSync/1.1"}
+                safe_url,
+                headers={"User-Agent": "OpenInk-CalendarSync/1.2"}
             )
-            with urllib.request.urlopen(req, timeout=6) as resp:
-                body = resp.read().decode("utf-8", errors="replace")
-        elif clean_url.endswith(".ics") and os.path.isfile(clean_url):
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                body = resp.read(MAX_ICS_BYTES).decode("utf-8", errors="replace")
+        elif clean_url.endswith(".ics") and os.path.isfile(clean_url) and not os.path.islink(clean_url):
             with open(clean_url, "r", encoding="utf-8") as f:
-                body = f.read()
+                body = f.read(MAX_ICS_BYTES)
         else:
             return ""
         _ics_cache[clean_url] = (now, body)
         return body
     except Exception as e:
-        print(f"[ICS Plugin Warning] Failed to fetch {clean_url}: {e}")
+        print(f"[ICS Plugin Warning] Failed to fetch {mask_url_for_log(clean_url)}: {type(e).__name__}")
         if clean_url in _ics_cache:
             return _ics_cache[clean_url][1]
         return ""

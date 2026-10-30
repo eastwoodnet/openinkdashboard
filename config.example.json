@@ -37,7 +37,7 @@
       "ics_urls": [],
       "items": [
         {
-          "title": "OpenInk v1.1 里程碑发布",
+          "title": "OpenInk 里程碑发布",
           "date": "+6",
           "time": "全天",
           "is_countdown": true
@@ -53,18 +53,6 @@
           "date": "+1",
           "time": "10:30",
           "is_countdown": false
-        },
-        {
-          "title": "家庭周末出行计划",
-          "date": "+4",
-          "time": "09:00",
-          "is_countdown": false
-        },
-        {
-          "title": "每月固定账单与发薪日",
-          "date": "+12",
-          "time": "全天",
-          "is_countdown": true
         }
       ]
     },
@@ -91,24 +79,12 @@
     "token_env": "HA_TOKEN",
     "sensors": [
       {
-        "id": "sensor.workroom_temperature",
-        "name": "工作间温度"
+        "id": "sensor.living_room_temperature",
+        "name": "客厅温度"
       },
       {
-        "id": "sensor.workroom_humidity",
-        "name": "工作间湿度"
-      },
-      {
-        "id": "sensor.kids_room_temperature",
-        "name": "儿童房温度"
-      },
-      {
-        "id": "sensor.kids_room_humidity",
-        "name": "儿童房湿度"
-      },
-      {
-        "id": "sensor.zhi_neng_yao_kong_temperature",
-        "name": "遥控器温度"
+        "id": "sensor.living_room_humidity",
+        "name": "客厅湿度"
       }
     ]
   }

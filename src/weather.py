@@ -17,8 +17,8 @@ def fetch_weather_wttr(city: str = "Beijing") -> dict:
         url,
         headers={"User-Agent": "curl/7.68.0", "Accept": "application/json"}
     )
-    with urllib.request.urlopen(req, timeout=5) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
+    with urllib.request.urlopen(req, timeout=4) as resp:
+        data = json.loads(resp.read(512 * 1024).decode("utf-8"))
 
     current = data.get("current_condition", [{}])[0]
     today = data.get("weather", [{}])[0]

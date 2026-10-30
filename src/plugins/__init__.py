@@ -1,23 +1,27 @@
 """
-OpenInk Dynamic External Data Source Plugin Manager.
+OpenInk Startup-Time External Plugin Manager (v1.2).
 
-Architectural Boundary:
+Architectural Design:
+- Zero Runtime Polling Overhead: Plugins are discovered ONCE at service startup (`discover_plugins()`).
+  Adding or updating a plugin bundle only requires a service restart (`systemctl restart openink`).
 - Built-in Core Data Sources (Always loaded):
   - `calendar`: 本地公历、农历干支生肖、二十四节气
   - `weather`: 城市实时气象与趋势预报
   - `todo`: 本地待办事项清单
   - `focus` / `alert`: 全屏综合焦点画报与即时大字通知
-
-- External Plugin Data Sources (Loaded ONLY when `plugins.<id>.enabled == True`):
+- External Plugin Data Sources (Executed ONLY when `plugins.<id>.enabled == True`):
   - `agenda`: 外部日历同步与重要纪念日倒数 (ICS 订阅)
   - `sensors`: Home Assistant 智能家居环境传感器
+  - Custom plugins in `src/plugins/<plugin_id>/` (containing `manifest.json` + `plugin.py`)
 """
 
-from typing import Dict, Any, List
+import os
+import json
+import importlib.util
+from typing import Dict, Any, List, Callable, Optional
 from config import get_secret
 from plugins.homeassistant import HomeAssistantClient
 from plugins.ics_agenda import fetch_agenda_data
-
 
 PLUGIN_CATALOG: List[Dict[str, Any]] = [
     {
@@ -49,7 +53,12 @@ PLUGIN_CATALOG: List[Dict[str, Any]] = [
 ]
 
 
-def _fetch_sensors_plugin(cfg: Dict[str, Any]) -> List[Dict[str, str]]:
+def _fetch_agenda_plugin(cfg: Dict[str, Any], force_refresh: bool = False) -> Dict[str, Any]:
+    agenda_cfg = cfg.get("plugins", {}).get("agenda", {})
+    return fetch_agenda_data(agenda_cfg, force_refresh=force_refresh)
+
+
+def _fetch_sensors_plugin(cfg: Dict[str, Any], force_refresh: bool = False) -> List[Dict[str, str]]:
     """Fetches Home Assistant sensor data when the `sensors` plugin is enabled."""
     plugins_cfg = cfg.get("plugins", {})
     sensors_plugin = plugins_cfg.get("sensors", {})
@@ -64,11 +73,8 @@ def _fetch_sensors_plugin(cfg: Dict[str, Any]) -> List[Dict[str, str]]:
             return data
 
     defaults = [
-        {"id": "sensor.workroom_temperature", "name": "工作间温度", "display": "22.4 °C"},
-        {"id": "sensor.workroom_humidity", "name": "工作间湿度", "display": "48.2 %"},
-        {"id": "sensor.kids_room_temperature", "name": "儿童房温度", "display": "23.1 °C"},
-        {"id": "sensor.kids_room_humidity", "name": "儿童房湿度", "display": "50.5 %"},
-        {"id": "sensor.zhi_neng_yao_kong_temperature", "name": "遥控器温度", "display": "21.8 °C"},
+        {"id": "sensor.living_room_temperature", "name": "客厅温度", "display": "22.4 °C"},
+        {"id": "sensor.living_room_humidity", "name": "客厅湿度", "display": "48.2 %"},
     ]
     default_map = {d["name"]: d["display"] for d in defaults}
     fallback = []
@@ -77,6 +83,85 @@ def _fetch_sensors_plugin(cfg: Dict[str, Any]) -> List[Dict[str, str]]:
         disp = s.get("display") or default_map.get(name, "22.0 °C")
         fallback.append({"id": s.get("id", ""), "name": name, "display": disp})
     return fallback
+
+
+PLUGIN_COLLECTORS: Dict[str, Callable[[Dict[str, Any], bool], Any]] = {
+    "agenda": _fetch_agenda_plugin,
+    "sensors": _fetch_sensors_plugin,
+}
+
+PLUGIN_WIDGETS: Dict[str, Any] = {}
+
+
+def register_plugin(
+    manifest: Dict[str, Any],
+    collector: Optional[Callable[[Dict[str, Any], bool], Any]] = None,
+    widget: Optional[Any] = None,
+):
+    """Registers a plugin's manifest, data collector, and Cairo widget renderer."""
+    pid = (manifest.get("id") or "").strip()
+    if not pid:
+        return
+    manifest.setdefault("implemented", True)
+    existing_idx = next((i for i, item in enumerate(PLUGIN_CATALOG) if item.get("id") == pid), None)
+    if existing_idx is not None:
+        PLUGIN_CATALOG[existing_idx] = manifest
+    else:
+        PLUGIN_CATALOG.append(manifest)
+
+    if collector is not None:
+        PLUGIN_COLLECTORS[pid] = collector
+    if widget is not None:
+        PLUGIN_WIDGETS[pid] = widget
+
+
+def discover_plugins(plugins_dir: Optional[str] = None) -> List[str]:
+    """
+    Scans `src/plugins/<plugin_id>/` once at startup for self-contained plugin bundles
+    (`manifest.json` + `plugin.py`). Zero background threads or runtime file watchers.
+    """
+    base_dir = plugins_dir or os.path.dirname(os.path.abspath(__file__))
+    discovered: List[str] = []
+    if not os.path.isdir(base_dir):
+        return discovered
+
+    for entry in sorted(os.listdir(base_dir)):
+        if entry.startswith(("_", ".")):
+            continue
+        sub_dir = os.path.join(base_dir, entry)
+        if not os.path.isdir(sub_dir):
+            continue
+        manifest_path = os.path.join(sub_dir, "manifest.json")
+        plugin_py = os.path.join(sub_dir, "plugin.py")
+        if not os.path.isfile(manifest_path):
+            continue
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            pid = manifest.get("id") or entry
+            manifest["id"] = pid
+
+            collector_fn = None
+            widget_inst = None
+            if os.path.isfile(plugin_py):
+                spec = importlib.util.spec_from_file_location(f"plugins.{pid}.plugin", plugin_py)
+                if spec and spec.loader:
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    collector_fn = getattr(mod, "collect", None)
+                    widget_cls = getattr(mod, "WIDGET_CLASS", None)
+                    widget_inst = getattr(mod, "WIDGET", None) or (widget_cls() if widget_cls else None)
+
+            register_plugin(manifest, collector=collector_fn, widget=widget_inst)
+            discovered.append(pid)
+        except Exception as e:
+            print(f"[Plugin Loader Warning] Skip invalid plugin '{entry}': {e}")
+
+    return discovered
+
+
+# Run once at startup
+discover_plugins()
 
 
 def get_enabled_plugin_ids(cfg: Dict[str, Any]) -> List[str]:
@@ -98,15 +183,15 @@ def load_enabled_plugins_context(cfg: Dict[str, Any], force_refresh: bool = Fals
     Dynamically executes collectors ONLY for enabled external plugins.
     Disabled plugins are skipped completely.
     """
-    plugins_cfg = cfg.get("plugins", {})
     enabled_ids = get_enabled_plugin_ids(cfg)
     plugin_ctx: Dict[str, Any] = {}
 
-    if "agenda" in enabled_ids:
-        agenda_cfg = plugins_cfg.get("agenda", {})
-        plugin_ctx["agenda"] = fetch_agenda_data(agenda_cfg, force_refresh=force_refresh)
-
-    if "sensors" in enabled_ids:
-        plugin_ctx["sensors"] = _fetch_sensors_plugin(cfg)
+    for pid in enabled_ids:
+        collector = PLUGIN_COLLECTORS.get(pid)
+        if collector:
+            try:
+                plugin_ctx[pid] = collector(cfg, force_refresh)
+            except Exception as e:
+                print(f"[Plugin Warning] Collector '{pid}' failed: {type(e).__name__}")
 
     return plugin_ctx

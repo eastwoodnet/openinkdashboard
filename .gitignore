@@ -7,6 +7,8 @@ venv/
 .DS_Store
 /tmp/
 .env
+config.json
+config.local.json
 
 # 本地追踪的设计/调研文档、开发笔记与测试用例（不上传至 GitHub）
 docs/

@@ -1029,7 +1029,7 @@
     // === Online Todo Manager ===
     async function loadTodos() {
       try {
-        const resp = await fetch('/api/todos');
+        const resp = await fetch('/api/todos', { headers: authHeaders() });
         const data = await resp.json();
         renderTodoList(data.all_items || []);
       } catch {}
@@ -1209,7 +1209,7 @@
     // Load initial saved config from server
     async function initStudio() {
       try {
-        const resp = await fetch('/api/config');
+        const resp = await fetch('/api/config', { headers: authHeaders() });
         if (resp.ok) {
           const cfg = await resp.json();
           if (cfg.auth_required) {
