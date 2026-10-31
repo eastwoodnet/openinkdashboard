@@ -88,6 +88,34 @@
           </div>
         </div>
 
+        <!-- 24h Time-Slot Schedule & DND -->
+        <div class="pt-2 border-t border-slate-100 space-y-2">
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="text-[11px] font-bold text-slate-700 block">⏰ 24 小时时段排程与休眠</span>
+              <span class="text-[11px] text-slate-400">按时段指定展示页面；休眠时段屏幕静止不刷新，保护墨水屏寿命</span>
+            </div>
+            <label class="flex items-center space-x-1 text-[11px] font-bold text-slate-600 shrink-0">
+              <input type="checkbox" id="scheduleEnabled" class="rounded"><span>启用</span>
+            </label>
+          </div>
+          <div id="scheduleStatus" class="text-[11px] font-mono bg-slate-100 text-slate-700 px-2 py-1 rounded"></div>
+          <div class="flex items-center space-x-1.5">
+            <span class="text-[11px] text-slate-500">非休眠时段数据保鲜周期:</span>
+            <select id="scheduleRefreshSelect" class="bg-white border border-slate-300 text-xs font-mono rounded-lg px-2 py-0.5">
+              <option value="900">15 分钟</option>
+              <option value="1800">30 分钟</option>
+              <option value="3600">1 小时</option>
+              <option value="7200">2 小时</option>
+            </select>
+          </div>
+          <div id="scheduleRules" class="space-y-1.5"></div>
+          <div class="flex gap-2">
+            <button type="button" onclick="addScheduleRule()" class="text-xs font-bold px-2.5 py-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50">+ 新增时段</button>
+            <button type="button" onclick="saveSchedule()" class="text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-900 text-white hover:bg-slate-800">保存排程</button>
+          </div>
+        </div>
+
         <!-- External Plugin Loader Switches -->
         <div class="pt-2 border-t border-slate-100">
           <div class="flex items-center justify-between mb-1.5">
@@ -1206,6 +1234,112 @@
       }
     }
 
+    // === 24h Time-Slot Schedule & DND ===
+    let scheduleConfig = { enabled: true, active_interval_sec: 1800, rules: [] };
+    let schedulePageIds = [];
+    const SCHED_MODE_LABEL = { carousel: '自动轮播', manual: '手动翻页', sleep_dnd: '休眠免打扰' };
+
+    function escHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function fmtDuration(sec) {
+      const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+      return h > 0 ? `${h} 小时 ${m} 分` : `${m} 分`;
+    }
+
+    function renderScheduleStatus(st) {
+      const el = document.getElementById('scheduleStatus');
+      if (!el || !st) return;
+      const pages = (st.active_page_ids || []).join(', ');
+      el.textContent = st.is_dnd
+        ? `🌙 当前: ${st.rule_name} (${st.window}) · 屏幕静止 · ${fmtDuration(st.next_boundary_sec)} 后切换`
+        : `☀️ 当前: ${st.rule_name} (${st.window}) · ${SCHED_MODE_LABEL[st.mode] || st.mode} · 页面 [${pages}] · ${fmtDuration(st.next_boundary_sec)} 后切换`;
+    }
+
+    function renderSchedule(status) {
+      document.getElementById('scheduleEnabled').checked = !!scheduleConfig.enabled;
+      const rs = document.getElementById('scheduleRefreshSelect');
+      const iv = String(scheduleConfig.active_interval_sec || 1800);
+      if (![...rs.options].some(o => o.value === iv)) rs.add(new Option(`${iv} 秒`, iv));
+      rs.value = iv;
+      renderScheduleStatus(status);
+
+      const box = document.getElementById('scheduleRules');
+      box.innerHTML = '';
+      (scheduleConfig.rules || []).forEach((r, idx) => {
+        const isDnd = r.mode === 'sleep_dnd';
+        const pageChecks = schedulePageIds.map(pid => `
+          <label class="inline-flex items-center space-x-0.5 mr-1.5">
+            <input type="checkbox" ${(r.pages || []).includes(pid) ? 'checked' : ''} onchange="toggleRulePage(${idx}, '${escHtml(pid)}', this.checked)">
+            <span>${escHtml(pid)}</span>
+          </label>`).join('');
+        const row = document.createElement('div');
+        row.className = `p-2 rounded-lg border text-[11px] space-y-1 ${isDnd ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-white border-slate-200'}`;
+        row.innerHTML = `
+          <div class="flex flex-wrap items-center gap-1.5">
+            <input value="${escHtml(r.name)}" onchange="updateRule(${idx}, 'name', this.value)" class="flex-1 min-w-[90px] border border-slate-300 rounded px-1.5 py-0.5 text-slate-800 font-bold">
+            <input type="time" value="${escHtml(r.start)}" onchange="updateRule(${idx}, 'start', this.value)" class="border border-slate-300 rounded px-1 py-0.5 text-slate-800 font-mono">
+            <span>~</span>
+            <input type="time" value="${escHtml(r.end)}" onchange="updateRule(${idx}, 'end', this.value)" class="border border-slate-300 rounded px-1 py-0.5 text-slate-800 font-mono">
+            <select onchange="updateRule(${idx}, 'mode', this.value)" class="border border-slate-300 rounded px-1 py-0.5 text-slate-800">
+              ${Object.entries(SCHED_MODE_LABEL).map(([k, v]) => `<option value="${k}" ${r.mode === k ? 'selected' : ''}>${v}</option>`).join('')}
+            </select>
+            <button type="button" onclick="removeScheduleRule(${idx})" class="px-1.5 text-red-500 font-bold">✕</button>
+          </div>
+          ${isDnd ? `<div class="opacity-80">休眠期间屏幕保持静止；零点日期后台静默翻篇，唤醒时一次性刷新。
+              <label class="ml-2"><input type="checkbox" ${r.allow_alert_override !== false ? 'checked' : ''} onchange="updateRule(${idx}, 'allow_alert_override', this.checked)"> 允许即时通知穿透</label></div>`
+            : `<div class="flex flex-wrap items-center gap-1">
+                 <span class="text-slate-500">展示页面:</span>${pageChecks || '<span class="text-slate-400">（无页面）</span>'}
+                 <span class="text-slate-400">（不勾选=全部）</span>
+                 <span class="ml-auto text-slate-500">轮播间隔(秒):</span>
+                 <input type="number" min="10" value="${r.carousel_interval_sec || 60}" onchange="updateRule(${idx}, 'carousel_interval_sec', parseInt(this.value) || 60)" class="w-16 border border-slate-300 rounded px-1 py-0.5 font-mono">
+               </div>`}
+        `;
+        box.appendChild(row);
+      });
+    }
+
+    function updateRule(idx, key, val) {
+      scheduleConfig.rules[idx][key] = val;
+      if (key === 'mode') renderSchedule();
+    }
+
+    function toggleRulePage(idx, pid, checked) {
+      const r = scheduleConfig.rules[idx];
+      r.pages = (r.pages || []).filter(p => p !== pid);
+      if (checked) r.pages.push(pid);
+    }
+
+    function addScheduleRule() {
+      scheduleConfig.rules = scheduleConfig.rules || [];
+      scheduleConfig.rules.push({ id: `rule_${Date.now()}`, name: '新时段', start: '09:00', end: '18:00', mode: 'carousel', pages: [], carousel_interval_sec: 60 });
+      renderSchedule();
+    }
+
+    function removeScheduleRule(idx) {
+      scheduleConfig.rules.splice(idx, 1);
+      renderSchedule();
+    }
+
+    async function saveSchedule() {
+      scheduleConfig.enabled = document.getElementById('scheduleEnabled').checked;
+      scheduleConfig.active_interval_sec = parseInt(document.getElementById('scheduleRefreshSelect').value) || 1800;
+      const resp = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ schedule: scheduleConfig })
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        scheduleConfig = data.schedule || scheduleConfig;
+        renderSchedule(data.schedule_status);
+        showToast('✓ 时段排程已保存并生效');
+      } else {
+        showToast(`! 保存失败 (HTTP ${resp.status})`, true);
+      }
+    }
+
     // Load initial saved config from server
     async function initStudio() {
       try {
@@ -1237,6 +1371,10 @@
 
           currentSensors = cfg.sensors || [];
           renderSensorConfigList();
+
+          scheduleConfig = cfg.schedule || scheduleConfig;
+          schedulePageIds = ((cfg.dashboard && cfg.dashboard.pages) || []).map(p => p.id);
+          renderSchedule(cfg.schedule_status);
 
           if (cfg.dashboard) {
             const modeSel = document.getElementById('displayModeSelect');

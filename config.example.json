@@ -87,5 +87,54 @@
         "name": "客厅湿度"
       }
     ]
+  },
+  "schedule": {
+    "enabled": true,
+    "active_interval_sec": 1800,
+    "rules": [
+      {
+        "id": "morning",
+        "name": "晨间晨会与气象",
+        "start": "07:30",
+        "end": "12:00",
+        "mode": "carousel",
+        "pages": [
+          "page_1"
+        ],
+        "carousel_interval_sec": 60
+      },
+      {
+        "id": "work",
+        "name": "日间工作与待办",
+        "start": "12:00",
+        "end": "18:30",
+        "mode": "carousel",
+        "pages": [
+          "page_1",
+          "page_2"
+        ],
+        "carousel_interval_sec": 60
+      },
+      {
+        "id": "evening",
+        "name": "晚间日程与倒数",
+        "start": "18:30",
+        "end": "23:00",
+        "mode": "carousel",
+        "pages": [
+          "page_2"
+        ],
+        "carousel_interval_sec": 60
+      },
+      {
+        "id": "night_sleep",
+        "name": "夜间休眠免打扰",
+        "start": "23:00",
+        "end": "07:30",
+        "mode": "sleep_dnd",
+        "pages": [],
+        "allow_alert_override": true
+      }
+    ]
   }
 }

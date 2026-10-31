@@ -123,7 +123,8 @@ trigger_inplace_refresh() {
         # 注入一次 next.bin 即可在 150ms 内无闪切换至最新图像并释放旧缓存！
         cat "$KEYS_DIR/next.bin" > "$EVENT_DEV" 2>/dev/null
     else
-        if [ "$MODE" = "manual" ]; then
+        if [ "$MODE" = "manual" ] || [ "$MODE" = "sleep_dnd" ]; then
+            # sleep_dnd (夜间休眠) 与手动模式一致：只原地刷新，不自动翻页
             # 多页手动模式下：步进一次再退回，淘汰 Evas 缓存同时保持在当前页码
             cat "$KEYS_DIR/next.bin" > "$EVENT_DEV" 2>/dev/null
             sleep 1

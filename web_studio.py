@@ -37,6 +37,7 @@ from todos import (
 )
 from plugins import PLUGIN_CATALOG, get_enabled_plugin_ids, load_enabled_plugins_context
 from alert_state import alert_state
+from scheduler import evaluate_schedule, filter_pages_for_rule, normalize_schedule_config
 
 app = FastAPI(title="OpenInk Studio")
 
@@ -224,15 +225,24 @@ def _render_cached_pages(
     active_page_index: int = 0,
     force_refresh: bool = False,
     rotate_portrait: bool = True,
+    notify: str = "always",
 ) -> Dict[str, Any]:
     """
-    Renders all configured pages into `/tmp/openink_assets/portrait/` (rotated 600x800 for portrait framebuffers)
-    and `/tmp/openink_assets/landscape/` (unrotated 800x600 for landscape displays & Web Kiosk),
-    computes MD5 hashes, updates `display_manager`, and wakes all `/api/v1/wait` clients.
+    Renders the pages active in the current schedule slot into `/tmp/openink_assets/portrait/`
+    (rotated 600x800 for portrait framebuffers) and `/tmp/openink_assets/landscape/`
+    (unrotated 800x600 for landscape displays & Web Kiosk), computes MD5 hashes and updates `display_manager`.
+
+    notify:
+      - "always":     wake all `/api/v1/wait` clients (user-initiated actions).
+      - "if_changed": wake clients only when any page hash changed (scheduled refresh; avoids useless E-Ink flashes).
+      - "never":      update assets silently.
     """
     cfg = load_config()
     if not pages_data:
         pages_data = normalize_dashboard_pages(cfg)
+    sched_state = evaluate_schedule(cfg)
+    pages_data = filter_pages_for_rule(pages_data, sched_state["active_rule"])
+    old_hashes = [(it["filename"], it["hash"]) for it in display_manager.playlist]
 
     portrait_dir = os.path.join(ASSETS_BASE_DIR, "portrait")
     landscape_dir = os.path.join(ASSETS_BASE_DIR, "landscape")
@@ -285,10 +295,14 @@ def _render_cached_pages(
     display_manager.playlist = playlist
     display_manager.active_page_index = max(0, min(active_page_index, len(playlist) - 1))
     display_manager.total_bytes = total_bytes
-    display_manager.notify_all()
+    new_hashes = [(it["filename"], it["hash"]) for it in playlist]
+    changed = new_hashes != old_hashes
+    if notify == "always" or (notify == "if_changed" and changed):
+        display_manager.notify_all()
 
     return {
         "ok": True,
+        "changed": changed,
         "version": display_manager.version,
         "page_count": len(playlist),
         "size_kb": round(total_bytes / 1024, 1),
@@ -298,6 +312,129 @@ def _render_cached_pages(
 def _ensure_rendered():
     if not display_manager.playlist:
         _render_cached_pages()
+
+
+# =========================================================================
+# Background Time-Slot Scheduler (daily rollover, periodic refresh, DND)
+# =========================================================================
+
+SCHEDULER_TICK_SEC = 30
+
+
+class ScheduleRunner:
+    """
+    Pure decision logic for one scheduler tick, separated from asyncio for testability.
+
+    Rules:
+    - Slot transition (rule/mode/pages/interval changed):
+        * entering DND  -> do NOT re-render; only wake clients so they learn `mode=sleep_dnd` and stop flipping.
+        * other slots   -> force re-render with filtered pages and wake clients.
+    - Date rollover at midnight:
+        * in DND        -> refresh data context in memory only (screen stays frozen, zero wear).
+        * otherwise     -> force re-render; wake clients only if images changed.
+    - Periodic refresh every `active_interval_sec` (skipped in DND); wake only if images changed.
+    - Expired alerts are dismissed automatically.
+    """
+
+    def __init__(self):
+        self.last_slot_key: Optional[tuple] = None
+        self.last_date: Optional[str] = None
+        self.last_refresh_ts: float = time.time()
+
+    def tick(self, now_ts: Optional[float] = None, now_dt=None) -> str:
+        import datetime as _dt
+        now_ts = now_ts if now_ts is not None else time.time()
+        now_dt = now_dt or _dt.datetime.now()
+        cfg = load_config()
+        st = evaluate_schedule(cfg, now=now_dt)
+        slot_key = (
+            st["rule_id"], st["mode"], st["carousel_interval_sec"],
+            tuple(p.get("id") for p in st["active_pages"]),
+        )
+        today = now_dt.date().isoformat()
+        action = "idle"
+
+        if alert_state.active and alert_state.is_expired():
+            alert_state.dismiss()
+            display_manager.alert_hash = ""
+            display_manager.notify_all()
+            action = "alert_expired"
+
+        if self.last_slot_key is None:
+            # First tick after startup: assets were rendered by _ensure_rendered().
+            self.last_slot_key = slot_key
+            self.last_date = today
+            self.last_refresh_ts = now_ts
+            return action if action != "idle" else "init"
+
+        if slot_key != self.last_slot_key:
+            self.last_slot_key = slot_key
+            self.last_date = today
+            if st["is_dnd"]:
+                display_manager.notify_all()
+                return "enter_dnd"
+            _render_cached_pages(force_refresh=True, notify="always")
+            self.last_refresh_ts = now_ts
+            return "slot_change"
+
+        if today != self.last_date:
+            self.last_date = today
+            if st["is_dnd"]:
+                get_fresh_context(force_refresh=True)
+                return "rollover_silent"
+            _render_cached_pages(force_refresh=True, notify="if_changed")
+            self.last_refresh_ts = now_ts
+            return "rollover"
+
+        if not st["is_dnd"] and (now_ts - self.last_refresh_ts) >= st["active_interval_sec"]:
+            res = _render_cached_pages(force_refresh=True, notify="if_changed")
+            self.last_refresh_ts = now_ts
+            return "refresh_changed" if res.get("changed") else "refresh_unchanged"
+
+        return action
+
+
+schedule_runner = ScheduleRunner()
+
+
+def _schedule_status_payload(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    st = evaluate_schedule(cfg)
+    return {
+        "enabled": st["schedule_enabled"],
+        "rule_id": st["rule_id"],
+        "rule_name": st["rule_name"],
+        "window": st["window"],
+        "mode": st["mode"],
+        "is_dnd": st["is_dnd"],
+        "carousel_interval_sec": st["carousel_interval_sec"],
+        "active_page_ids": [p.get("id") for p in st["active_pages"]],
+        "next_boundary_sec": st["next_boundary_sec"],
+        "active_interval_sec": st["active_interval_sec"],
+    }
+
+
+@app.get("/api/schedule/status")
+def schedule_status_api():
+    return _schedule_status_payload(load_config())
+
+
+async def _scheduler_loop():
+    while True:
+        await asyncio.sleep(SCHEDULER_TICK_SEC)
+        try:
+            action = await asyncio.to_thread(schedule_runner.tick)
+            if action not in ("idle", "init", "refresh_unchanged"):
+                print(f"[Scheduler] {time.strftime('%Y-%m-%d %H:%M:%S')} action={action}", flush=True)
+        except Exception as e:
+            print(f"[Scheduler Warning] tick failed: {type(e).__name__}: {e}", flush=True)
+
+
+@app.on_event("startup")
+async def _start_scheduler():
+    display_manager.bind_loop(asyncio.get_running_loop())
+    if os.environ.get("OPENINK_DISABLE_SCHEDULER") == "1":
+        return
+    asyncio.create_task(_scheduler_loop())
 
 
 # =========================================================================
@@ -340,6 +477,7 @@ class ConfigUpdateRequest(BaseModel):
     plugins: Optional[Dict[str, Any]] = None
     sensors: Optional[List[Dict[str, str]]] = None
     rotation: Optional[int] = None
+    schedule: Optional[Dict[str, Any]] = None
 
 
 class DeviceRotationRequest(BaseModel):
@@ -454,9 +592,9 @@ def api_v1_display(
     display_manager.record_client(device_id, client_ip, mode="pull")
 
     cfg = load_config()
-    dash = cfg.get("dashboard", {})
-    mode = dash.get("mode", "carousel")
-    carousel_interval_sec = int(dash.get("carousel_interval_sec", 60))
+    sched_state = evaluate_schedule(cfg)
+    mode = sched_state["mode"]
+    carousel_interval_sec = int(sched_state["carousel_interval_sec"])
 
     if orientation == "landscape" or device_id.startswith("kiosk") or device_id.startswith("web"):
         asset_bucket = "landscape"
@@ -489,7 +627,9 @@ def api_v1_display(
         "url": "",
     }
 
-    alert_active = alert_state.active
+    alert_active = alert_state.active and not alert_state.is_expired()
+    if sched_state["is_dnd"] and not sched_state["allow_alert_override"]:
+        alert_active = False
     alert_url = ""
     if alert_active and display_manager.alert_hash:
         alert_url = f"{base_url}/api/v1/assets/{asset_bucket}/{display_manager.alert_filename}?v={display_manager.alert_hash}{token_suffix}"
@@ -500,6 +640,13 @@ def api_v1_display(
         "mode": mode,
         "refresh_rate": 300,
         "carousel_interval_sec": carousel_interval_sec,
+        "schedule": {
+            "rule_id": sched_state["rule_id"],
+            "rule_name": sched_state["rule_name"],
+            "window": sched_state["window"],
+            "is_dnd": sched_state["is_dnd"],
+            "next_boundary_sec": sched_state["next_boundary_sec"],
+        },
         "alert": {
             "active": alert_active,
             "beep": True,
@@ -666,6 +813,8 @@ def get_config_api():
         "enabled_plugins": get_enabled_plugin_ids(cfg),
         "sensors": ctx.get("sensors", []),
         "agenda": ctx.get("agenda", {}),
+        "schedule": normalize_schedule_config(cfg.get("schedule")),
+        "schedule_status": _schedule_status_payload(cfg),
         "version": display_manager.version,
     }
 
@@ -730,6 +879,9 @@ def update_config_api(
         updates.setdefault("device", {})["rotation"] = req.rotation
         force_refresh = True
 
+    if req.schedule is not None:
+        updates["schedule"] = normalize_schedule_config(req.schedule)
+
     if updates:
         save_config(updates)
 
@@ -757,6 +909,8 @@ def update_config_api(
         "enabled_plugins": get_enabled_plugin_ids(new_cfg),
         "sensors": ctx.get("sensors", []),
         "agenda": ctx.get("agenda", {}),
+        "schedule": normalize_schedule_config(new_cfg.get("schedule")),
+        "schedule_status": _schedule_status_payload(new_cfg),
         "weather": ctx.get("weather", {}),
         "version": display_manager.version,
     }
