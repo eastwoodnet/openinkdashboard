@@ -21,7 +21,7 @@
       </div>
       <div>
         <h1 class="text-base font-bold tracking-tight">OpenInk Studio</h1>
-        <p class="text-xs text-slate-400">E-Ink 看板编排与插件工作台</p>
+        <p class="text-xs text-slate-400">E-Ink 看板编排与时段排程工作台</p>
       </div>
     </div>
     <div class="flex items-center space-x-2.5">
@@ -39,328 +39,14 @@
     </div>
   </header>
 
-  <!-- Main Studio Workspace (items-start guarantees right preview is aligned to TOP, never vertically centered) -->
+  <!-- Main Studio Workspace (Left: 7 Cols Sticky Preview | Right: 5 Cols Tabbed Settings) -->
   <main class="max-w-7xl w-full mx-auto p-5 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
-    <!-- Left Column: Page Tabs + Plugin Loader + Layout & Slot Controls (5 Cols) -->
-    <div class="lg:col-span-5 space-y-4">
-
-      <!-- STEP 0: Dynamic Multi-Page Tabs (Page 1, Page 2, Page 3... Reusing the Exact Same Builder) & Plugin Loader -->
-      <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
-        <div class="flex items-center justify-between">
-          <div>
-            <label class="text-xs font-bold text-slate-700 uppercase tracking-wider block">0. 看板页面、轮播模式与外部插件</label>
-            <span class="text-[11px] text-slate-400">支持多页自由扩展，每页可独立设定分栏结构与数据源卡片</span>
-          </div>
-          <button type="button" onclick="addDashboardPage()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold px-2.5 py-1 rounded-lg transition shrink-0">
-            + 新增页面
-          </button>
-        </div>
-
-        <!-- Page Tabs Bar -->
-        <div id="pageTabsContainer" class="flex flex-wrap items-center gap-1.5 pt-0.5"></div>
-
-        <!-- Display Mode (Carousel vs Manual) & Interval Selector -->
-        <div class="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200/80">
-          <div class="flex items-center space-x-2">
-            <span class="text-[11px] font-bold text-slate-600">🔄 多页展示模式:</span>
-            <select id="displayModeSelect" onchange="onDisplayModeChange()" class="bg-white border border-slate-300 text-slate-800 text-xs font-bold rounded-lg px-2 py-1">
-              <option value="carousel">自动轮播 (Carousel)</option>
-              <option value="manual">手动翻页 (Manual)</option>
-            </select>
-          </div>
-          <div id="carouselIntervalBox" class="flex items-center space-x-1.5">
-            <span class="text-[11px] text-slate-500 font-medium">间隔:</span>
-            <select id="carouselIntervalSelect" onchange="onDisplayModeChange()" class="bg-white border border-slate-300 text-slate-800 text-xs font-mono font-bold rounded-lg px-2 py-1">
-              <option value="30">30 秒</option>
-              <option value="60" selected>1 分钟</option>
-              <option value="180">3 分钟</option>
-              <option value="300">5 分钟</option>
-              <option value="600">10 分钟</option>
-              <option value="900">15 分钟</option>
-              <option value="1800">30 分钟</option>
-              <option value="3600">1 小时</option>
-              <option value="7200">2 小时</option>
-              <option value="14400">4 小时</option>
-              <option value="43200">12 小时</option>
-              <option value="86400">24 小时</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- 24h Time-Slot Schedule & DND -->
-        <div class="pt-2 border-t border-slate-100 space-y-2">
-          <div class="flex items-center justify-between">
-            <div>
-              <span class="text-[11px] font-bold text-slate-700 block">⏰ 24 小时时段排程与休眠</span>
-              <span class="text-[11px] text-slate-400">按时段指定展示页面；休眠时段屏幕静止不刷新，保护墨水屏寿命</span>
-            </div>
-            <label class="flex items-center space-x-1 text-[11px] font-bold text-slate-600 shrink-0">
-              <input type="checkbox" id="scheduleEnabled" class="rounded"><span>启用</span>
-            </label>
-          </div>
-          <div id="scheduleStatus" class="text-[11px] font-mono bg-slate-100 text-slate-700 px-2 py-1 rounded"></div>
-          <div class="flex items-center space-x-1.5">
-            <span class="text-[11px] text-slate-500">非休眠时段数据保鲜周期:</span>
-            <select id="scheduleRefreshSelect" class="bg-white border border-slate-300 text-xs font-mono rounded-lg px-2 py-0.5">
-              <option value="900">15 分钟</option>
-              <option value="1800">30 分钟</option>
-              <option value="3600">1 小时</option>
-              <option value="7200">2 小时</option>
-            </select>
-          </div>
-          <div id="scheduleRules" class="space-y-1.5"></div>
-          <div class="flex gap-2">
-            <button type="button" onclick="addScheduleRule()" class="text-xs font-bold px-2.5 py-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50">+ 新增时段</button>
-            <button type="button" onclick="saveSchedule()" class="text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-900 text-white hover:bg-slate-800">保存排程</button>
-          </div>
-        </div>
-
-        <!-- External Plugin Loader Switches -->
-        <div class="pt-2 border-t border-slate-100">
-          <div class="flex items-center justify-between mb-1.5">
-            <span class="text-[11px] font-bold text-slate-500">🔌 外部数据源插件 (启用后自动加载并分配槽位)</span>
-          </div>
-          <div id="pluginToggleList" class="grid grid-cols-2 gap-1.5"></div>
-        </div>
-      </div>
-
-      <!-- STEP 1: Choose 1 of 5 Layout Grid Structures (For Current Selected Page) -->
-      <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-        <div class="flex items-center justify-between mb-3">
-          <label class="text-xs font-bold text-slate-600 uppercase tracking-wider">1. 选择当前页分栏布局 (5 种网格结构)</label>
-          <span id="currentPageBadge" class="text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded">当前编辑: 第 1 页</span>
-        </div>
-        <div class="grid grid-cols-5 gap-2" id="templateButtons">
-          <!-- 2|1 左二右一 -->
-          <button type="button" onclick="setTemplate('2_1')" data-tpl="2_1" class="tpl-btn p-2 rounded-xl border-2 border-slate-900 bg-slate-900 text-white flex flex-col items-center justify-center transition">
-            <div class="w-11 h-8 border border-current rounded grid grid-cols-2 gap-0.5 p-0.5 mb-1.5 bg-white">
-              <div class="grid grid-rows-2 gap-0.5">
-                <div class="bg-slate-700 rounded-sm"></div>
-                <div class="bg-slate-700 rounded-sm"></div>
-              </div>
-              <div class="bg-slate-900 rounded-sm"></div>
-            </div>
-            <span class="text-[11px] font-bold leading-tight">2|1</span>
-            <span class="text-[10px] opacity-75 scale-90">左二右一</span>
-          </button>
-
-          <!-- 1|2 左一右二 -->
-          <button type="button" onclick="setTemplate('1_2')" data-tpl="1_2" class="tpl-btn p-2 rounded-xl border-2 border-slate-200 hover:border-slate-300 text-slate-700 flex flex-col items-center justify-center transition">
-            <div class="w-11 h-8 border border-slate-600 rounded grid grid-cols-2 gap-0.5 p-0.5 mb-1.5 bg-white">
-              <div class="bg-slate-800 rounded-sm"></div>
-              <div class="grid grid-rows-2 gap-0.5">
-                <div class="bg-slate-500 rounded-sm"></div>
-                <div class="bg-slate-500 rounded-sm"></div>
-              </div>
-            </div>
-            <span class="text-[11px] font-bold leading-tight">1|2</span>
-            <span class="text-[10px] opacity-75 scale-90">左一右二</span>
-          </button>
-
-          <!-- 2x2 四分屏 -->
-          <button type="button" onclick="setTemplate('2x2')" data-tpl="2x2" class="tpl-btn p-2 rounded-xl border-2 border-slate-200 hover:border-slate-300 text-slate-700 flex flex-col items-center justify-center transition">
-            <div class="w-11 h-8 border border-slate-600 rounded grid grid-cols-2 grid-rows-2 gap-0.5 p-0.5 mb-1.5 bg-white">
-              <div class="bg-slate-600 rounded-sm"></div>
-              <div class="bg-slate-600 rounded-sm"></div>
-              <div class="bg-slate-600 rounded-sm"></div>
-              <div class="bg-slate-600 rounded-sm"></div>
-            </div>
-            <span class="text-[11px] font-bold leading-tight">2×2</span>
-            <span class="text-[10px] opacity-75 scale-90">四象限</span>
-          </button>
-
-          <!-- 1x2 左右双栏 -->
-          <button type="button" onclick="setTemplate('1x2')" data-tpl="1x2" class="tpl-btn p-2 rounded-xl border-2 border-slate-200 hover:border-slate-300 text-slate-700 flex flex-col items-center justify-center transition">
-            <div class="w-11 h-8 border border-slate-600 rounded grid grid-cols-2 gap-0.5 p-0.5 mb-1.5 bg-white">
-              <div class="bg-slate-700 rounded-sm"></div>
-              <div class="bg-slate-700 rounded-sm"></div>
-            </div>
-            <span class="text-[11px] font-bold leading-tight">1×2</span>
-            <span class="text-[10px] opacity-75 scale-90">左右双栏</span>
-          </button>
-
-          <!-- 1x1 全屏单卡 -->
-          <button type="button" onclick="setTemplate('1x1')" data-tpl="1x1" class="tpl-btn p-2 rounded-xl border-2 border-slate-200 hover:border-slate-300 text-slate-700 flex flex-col items-center justify-center transition">
-            <div class="w-11 h-8 border border-slate-600 rounded p-0.5 mb-1.5 bg-white flex">
-              <div class="bg-slate-800 rounded-sm w-full h-full"></div>
-            </div>
-            <span class="text-[11px] font-bold leading-tight">1×1</span>
-            <span class="text-[10px] opacity-75 scale-90">全屏单卡</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- STEP 2: Interactive Visual Card Grid for Selecting Data Sources per Slot -->
-      <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-        <div class="flex items-center justify-between mb-2.5">
-          <label class="text-xs font-bold text-slate-600 uppercase tracking-wider">2. 为当前页各卡片槽位选择数据源</label>
-          <span id="layoutSpecTag" class="text-[11px] font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded">2|1 左二右一</span>
-        </div>
-        <p class="text-[11px] text-slate-400 mb-3">可选「系统内置数据源」或上方已启用的「外部插件数据源」：</p>
-
-        <!-- Dynamic 2D Visual Slot Grid -->
-        <div id="visualSlotGrid" class="bg-slate-100 p-2.5 rounded-xl border border-slate-200"></div>
-      </div>
-
-      <!-- Primary Action: Save & Publish -->
-      <button id="pushBtn" onclick="pushToDevice()" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 px-4 rounded-xl shadow-md transition text-sm flex items-center justify-center space-x-2">
-        <span id="pushBtnLabel">📲 保存并发布看板</span>
-      </button>
-
-      <!-- STEP 3: Contextual Data Source Content Configuration -->
-      <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-4">
-        <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
-          <label class="text-xs font-bold text-slate-600 uppercase tracking-wider">3. 当前已挂载数据源与插件内容设置</label>
-          <span id="activeSourcesSummary" class="text-[11px] text-indigo-600 font-medium"></span>
-        </div>
-
-        <!-- (A) P0 Plugin: External ICS Calendar & Countdowns Config ('agenda') -->
-        <div id="dsConfigAgenda" class="hidden bg-indigo-50/60 p-3.5 rounded-xl border border-indigo-200 space-y-3">
-          <div class="flex items-center justify-between">
-            <div>
-              <span class="text-xs font-bold text-indigo-950 block">📆 [P0 外部插件] 外部日历同步与倒数日 (ICS)</span>
-              <span class="text-[11px] text-slate-500">支持订阅 iCloud / Google / 飞书 .ics 链接 + 自定义日程与重要倒数日</span>
-            </div>
-            <span class="text-[10px] font-bold bg-indigo-600 text-white px-2 py-0.5 rounded">方案 A 独立卡 + 月历打点</span>
-          </div>
-
-          <!-- ICS URLs input -->
-          <div>
-            <label class="block text-[11px] font-bold text-slate-600 mb-1">外部 .ics 订阅链接（每行一个 URL，支持 https:// 或 webcal://）</label>
-            <textarea id="agendaIcsUrls" rows="2" placeholder="例如: https://pXX-caldav.icloud.com/published/2/... 或飞书/Google .ics 链接" class="w-full bg-white border border-slate-300 text-slate-800 text-xs rounded-lg p-2 font-mono resize-none"></textarea>
-          </div>
-
-          <!-- Custom Schedule & Countdown Items -->
-          <div>
-            <div class="flex items-center justify-between mb-1.5">
-              <label class="text-[11px] font-bold text-slate-600">自定义日程与纪念日倒数（日期填 <code class="bg-white px-1 rounded">YYYY-MM-DD</code>、<code class="bg-white px-1 rounded">MM-DD</code> 或 <code class="bg-white px-1 rounded">+天数</code>）</label>
-              <button type="button" onclick="addAgendaItemRow()" class="text-[11px] text-indigo-700 hover:text-indigo-900 font-bold">+ 新增日程/倒数日</button>
-            </div>
-            <div id="agendaItemsContainer" class="space-y-1.5 max-h-52 overflow-y-auto pr-1"></div>
-          </div>
-
-          <button type="button" onclick="saveAgendaPluginConfig()" class="w-full bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-bold py-2 rounded-lg transition shadow-sm">
-            🔄 保存 ICS 与日程倒数配置并刷新预览
-          </button>
-        </div>
-
-        <!-- (B) Weather Data Source Config (Built-in) -->
-        <div id="dsConfigWeather" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold text-slate-700">🌤️ [内置] 实时气象数据源 · 城市设置</span>
-            <span class="text-[11px] text-slate-400">wttr.in 实时气象</span>
-          </div>
-          <div class="flex space-x-2">
-            <select id="cityQuickSelect" onchange="onQuickCitySelect(this.value)" class="bg-white border border-slate-300 text-slate-800 text-xs rounded-lg px-2.5 py-2 font-medium">
-              <option value="Beijing">北京 (Beijing)</option>
-              <option value="Shanghai">上海 (Shanghai)</option>
-              <option value="Guangzhou">广州 (Guangzhou)</option>
-              <option value="Shenzhen">深圳 (Shenzhen)</option>
-              <option value="Hangzhou">杭州 (Hangzhou)</option>
-              <option value="Chengdu">成都 (Chengdu)</option>
-              <option value="Wuhan">武汉 (Wuhan)</option>
-              <option value="Nanjing">南京 (Nanjing)</option>
-              <option value="custom">自定义城市…</option>
-            </select>
-            <input id="cityInput" type="text" value="Beijing" placeholder="输入城市名或拼音" onkeydown="if(event.key==='Enter') saveWeatherCity()" class="flex-1 bg-white border border-slate-300 text-slate-800 text-xs rounded-lg px-2.5 py-2 font-medium">
-            <button onclick="saveWeatherCity()" class="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition">更新</button>
-          </div>
-        </div>
-
-        <!-- (C) Todo Data Source Config (Built-in) -->
-        <div id="dsConfigTodo" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2.5">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold text-slate-700">☑️ [内置] 待办清单数据源 · 任务编辑</span>
-            <button onclick="clearDoneTodos()" class="text-[11px] text-slate-400 hover:text-rose-600 transition">清理已完成项</button>
-          </div>
-          <div class="flex space-x-2">
-            <input id="newTodoInput" type="text" placeholder="输入新待办事项，按回车添加…" onkeydown="if(event.key==='Enter') addTodo()" class="flex-1 bg-white border border-slate-300 text-slate-800 text-xs rounded-lg px-2.5 py-2 font-medium">
-            <button onclick="addTodo()" class="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition">添加</button>
-          </div>
-          <div id="todoListContainer" class="max-h-44 overflow-y-auto space-y-1.5 pr-1"></div>
-        </div>
-
-        <!-- (D) Sensors Data Source Config (External Plugin) -->
-        <div id="dsConfigSensors" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2.5">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold text-slate-700">🌡️ [外部插件] Home Assistant 环境传感器配置</span>
-            <button onclick="addSensorRow()" class="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold">+ 新增传感器行</button>
-          </div>
-          <div id="sensorListContainer" class="space-y-1.5 max-h-48 overflow-y-auto pr-1"></div>
-          <button onclick="saveSensorsConfig()" class="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-2 rounded-lg transition">应用传感器列表并刷新预览</button>
-        </div>
-
-        <!-- (E) Calendar Data Source Info (Built-in) -->
-        <div id="dsConfigCalendar" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between">
-          <div>
-            <span class="text-xs font-bold text-slate-700 block">📅 [内置] 日历与农历节气数据源</span>
-            <span class="text-[11px] text-slate-500">自动同步公历、1900-2050 农历干支节气；启用 ICS 插件后自动在有日程的日期下打点标记</span>
-          </div>
-          <span class="text-[11px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded shrink-0">实时计算</span>
-        </div>
-
-      </div>
-
-      <!-- STEP 4: Always-Visible Real-Time Big-Text Alert Notification & Preview Card -->
-      <div id="dsConfigAlert" class="bg-white p-4 rounded-2xl shadow-sm border-2 border-rose-200 space-y-3">
-        <div class="flex items-center justify-between border-b border-rose-100 pb-2.5">
-          <div>
-            <label class="text-xs font-bold text-rose-700 uppercase tracking-wider block">4. 实时大字通知推送与效果预览</label>
-            <span class="text-[11px] text-slate-400">输入文字即可在右侧实时预览全屏大字通知排版效果，或一键插播至终端</span>
-          </div>
-          <button type="button" onclick="setPreviewMode('alert')" class="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-2.5 py-1.5 rounded-lg transition shrink-0">
-            👁️ 预览大字通知效果
-          </button>
-        </div>
-
-        <div class="space-y-2">
-          <div>
-            <label class="block text-[11px] font-bold text-slate-500 mb-1">通知大标题</label>
-            <input id="alertTitle" type="text" value="桌面重点备忘提醒" oninput="onAlertInput()" onfocus="setPreviewMode('alert')" placeholder="通知/备忘标题" class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs rounded-lg p-2 font-bold focus:bg-white">
-          </div>
-          <div>
-            <label class="block text-[11px] font-bold text-slate-500 mb-1">大字通知正文（支持多行自动折行排版）</label>
-            <textarea id="alertText" rows="3" oninput="onAlertInput()" onfocus="setPreviewMode('alert')" placeholder="输入通知或备忘正文（自动多行折行排版）…" class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs rounded-lg p-2 font-medium resize-none focus:bg-white">下午 15:00 系统架构评审会议，请提前准备好演示文稿与测试环境。</textarea>
-          </div>
-          <div class="flex items-center space-x-2">
-            <div class="flex-1">
-              <label class="block text-[10px] font-bold text-slate-400 mb-0.5">来源 / 署名</label>
-              <input id="alertSender" type="text" value="OpenInk Studio" oninput="onAlertInput()" onfocus="setPreviewMode('alert')" placeholder="署名/来源" class="w-full bg-slate-50 border border-slate-300 text-xs rounded-lg p-2 font-medium focus:bg-white">
-            </div>
-            <div class="w-24">
-              <label class="block text-[10px] font-bold text-slate-400 mb-0.5">停留时长(分钟)</label>
-              <input id="alertDuration" type="number" value="15" min="1" max="120" oninput="onAlertInput()" onfocus="setPreviewMode('alert')" class="w-full bg-slate-50 border border-slate-300 text-xs rounded-lg p-2 font-bold text-center focus:bg-white">
-            </div>
-          </div>
-        </div>
-
-        <div class="flex space-x-2 pt-1">
-          <button type="button" onclick="sendAlert()" class="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 px-3 rounded-xl shadow-sm transition text-xs flex items-center justify-center space-x-1">
-            <span>🚨 立即发布大字通知</span>
-          </button>
-          <button type="button" onclick="dismissAlert()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2.5 px-3 rounded-xl transition text-xs">
-            ↩️ 恢复常规看板
-          </button>
-        </div>
-      </div>
-
-      <!-- Optional API Token (Hidden by default unless auth_required or user expands) -->
-      <details id="apiTokenDetails" class="hidden bg-white px-4 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-500">
-        <summary class="cursor-pointer font-medium">🔒 访问密钥 (API Token)</summary>
-        <div class="mt-2.5">
-          <input id="apiTokenInput" type="password" placeholder="输入 OPENINK_API_TOKEN" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-xs rounded-lg p-2">
-        </div>
-      </details>
-
-      <div id="statusToast" class="hidden text-xs font-bold py-2.5 px-4 rounded-xl text-center"></div>
-
-    </div>
-
-    <!-- Right Column: TOP-ALIGNED Live 800x600 Pixel Preview (7 Cols, self-start + sticky top-5) -->
-    <div class="lg:col-span-7 self-start lg:sticky lg:top-5">
+    <!-- LEFT COLUMN: TOP-ALIGNED Live 800x600 Pixel Canvas Preview (7 Cols, self-start + sticky top-5) -->
+    <div class="lg:col-span-7 self-start lg:sticky lg:top-5 space-y-4">
       <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
         
+        <!-- Preview Header with Mode Switcher -->
         <div class="flex flex-wrap items-center justify-between gap-2 mb-3.5">
           <div class="flex items-center space-x-2">
             <span id="previewTitle" class="font-bold text-sm text-slate-800">OpenInk · 画布预览 (800×600)</span>
@@ -379,7 +65,7 @@
           </div>
         </div>
 
-        <!-- Landscape 4:3 (800x600) Preview Canvas Wrapper (Top-aligned, no vertical centering stretch) -->
+        <!-- Landscape 4:3 (800x600) Preview Canvas Wrapper -->
         <div class="bg-slate-200 rounded-xl p-5 flex items-start justify-center">
           <div class="eink-bezel bg-white rounded-lg p-2.5 w-full max-w-2xl">
             <div id="previewPlaceholder" class="w-full aspect-[4/3] rounded border border-slate-300 bg-slate-50 flex items-center justify-center text-slate-400 text-sm">正在渲染墨水屏画面…</div>
@@ -387,11 +73,418 @@
           </div>
         </div>
 
-        <p class="text-xs text-slate-400 text-center mt-3">
-          预览图按 800×600 画布 1:1 实时渲染；点击右上角可随时切换「常规看板预览」与「大字通知效果预览」。
-        </p>
+        <!-- Status & Schedule Banner below Preview -->
+        <div class="mt-3.5 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs text-slate-500 gap-2">
+          <div class="flex items-center space-x-2">
+            <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span>画布 800×600 像素 1:1 实时渲染与终端推送</span>
+          </div>
+          <button type="button" onclick="switchSettingsTab('schedule')" class="text-indigo-600 hover:text-indigo-800 font-bold transition">
+            ⏰ 查看排程状态 ➔
+          </button>
+        </div>
 
       </div>
+    </div>
+
+    <!-- RIGHT COLUMN: Categorized Settings & Configurations (5 Cols) -->
+    <div class="lg:col-span-5 space-y-4">
+
+      <!-- Global Status Toast (Top of right column, always visible) -->
+      <div id="statusToast" class="hidden text-xs font-bold py-2.5 px-4 rounded-xl text-center shadow-sm transition-all duration-200"></div>
+
+      <!-- Segmented 4-Tab Navigation Bar -->
+      <div class="bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200 grid grid-cols-4 gap-1">
+        <button type="button" id="tabBtnLayout" onclick="switchSettingsTab('layout')" class="py-2 px-1 text-center rounded-xl text-xs font-bold transition flex flex-col sm:flex-row items-center justify-center space-x-0 sm:space-x-1 bg-slate-900 text-white shadow-sm">
+          <span>📑</span>
+          <span>页面编排</span>
+        </button>
+        <button type="button" id="tabBtnSchedule" onclick="switchSettingsTab('schedule')" class="py-2 px-1 text-center rounded-xl text-xs font-bold transition flex flex-col sm:flex-row items-center justify-center space-x-0 sm:space-x-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100">
+          <span>⏰</span>
+          <span>时段排程</span>
+        </button>
+        <button type="button" id="tabBtnData" onclick="switchSettingsTab('data')" class="py-2 px-1 text-center rounded-xl text-xs font-bold transition flex flex-col sm:flex-row items-center justify-center space-x-0 sm:space-x-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100">
+          <span>🔌</span>
+          <span>数据源</span>
+        </button>
+        <button type="button" id="tabBtnDevice" onclick="switchSettingsTab('device')" class="py-2 px-1 text-center rounded-xl text-xs font-bold transition flex flex-col sm:flex-row items-center justify-center space-x-0 sm:space-x-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100">
+          <span>⚙️</span>
+          <span>设备通知</span>
+        </button>
+      </div>
+
+      <!-- ==================== TAB 1: 页面编排 (Pages & Layout) ==================== -->
+      <div id="tabPaneLayout" class="space-y-4">
+
+        <!-- STEP 0: Multi-Page Tabs & Carousel Mode -->
+        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <label class="text-xs font-bold text-slate-700 uppercase tracking-wider block">0. 看板页面与多页轮播</label>
+              <span class="text-[11px] text-slate-400">支持多页自由扩展，每页可独立设定分栏网格</span>
+            </div>
+            <button type="button" onclick="addDashboardPage()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold px-2.5 py-1 rounded-lg transition shrink-0">
+              + 新增页面
+            </button>
+          </div>
+
+          <!-- Page Tabs Bar -->
+          <div id="pageTabsContainer" class="flex flex-wrap items-center gap-1.5 pt-0.5"></div>
+
+          <!-- Display Mode (Carousel vs Manual) & Interval Selector -->
+          <div class="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200/80">
+            <div class="flex items-center space-x-2">
+              <span class="text-[11px] font-bold text-slate-600">🔄 多页模式:</span>
+              <select id="displayModeSelect" onchange="onDisplayModeChange()" class="bg-white border border-slate-300 text-slate-800 text-xs font-bold rounded-lg px-2 py-1">
+                <option value="carousel">自动轮播 (Carousel)</option>
+                <option value="manual">手动翻页 (Manual)</option>
+              </select>
+            </div>
+            <div id="carouselIntervalBox" class="flex items-center space-x-1.5">
+              <span class="text-[11px] text-slate-500 font-medium">轮播间隔:</span>
+              <select id="carouselIntervalSelect" onchange="onDisplayModeChange()" class="bg-white border border-slate-300 text-slate-800 text-xs font-mono font-bold rounded-lg px-2 py-1">
+                <option value="30">30 秒</option>
+                <option value="60" selected>1 分钟</option>
+                <option value="180">3 分钟</option>
+                <option value="300">5 分钟</option>
+                <option value="600">10 分钟</option>
+                <option value="900">15 分钟</option>
+                <option value="1800">30 分钟</option>
+                <option value="3600">1 小时</option>
+                <option value="7200">2 小时</option>
+                <option value="14400">4 小时</option>
+                <option value="43200">12 小时</option>
+                <option value="86400">24 小时</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 1: Choose 1 of 5 Layout Grid Structures -->
+        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+          <div class="flex items-center justify-between mb-3">
+            <label class="text-xs font-bold text-slate-600 uppercase tracking-wider">1. 选择当前页分栏布局 (5 种网格结构)</label>
+            <span id="currentPageBadge" class="text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded">当前编辑: 第 1 页</span>
+          </div>
+          <div class="grid grid-cols-5 gap-2" id="templateButtons">
+            <!-- 2|1 左二右一 -->
+            <button type="button" onclick="setTemplate('2_1')" data-tpl="2_1" class="tpl-btn p-2 rounded-xl border-2 border-slate-900 bg-slate-900 text-white flex flex-col items-center justify-center transition">
+              <div class="w-11 h-8 border border-current rounded grid grid-cols-2 gap-0.5 p-0.5 mb-1.5 bg-white">
+                <div class="grid grid-rows-2 gap-0.5">
+                  <div class="bg-slate-700 rounded-sm"></div>
+                  <div class="bg-slate-700 rounded-sm"></div>
+                </div>
+                <div class="bg-slate-900 rounded-sm"></div>
+              </div>
+              <span class="text-[11px] font-bold leading-tight">2|1</span>
+              <span class="text-[10px] opacity-75 scale-90">左二右一</span>
+            </button>
+
+            <!-- 1|2 左一右二 -->
+            <button type="button" onclick="setTemplate('1_2')" data-tpl="1_2" class="tpl-btn p-2 rounded-xl border-2 border-slate-200 hover:border-slate-300 text-slate-700 flex flex-col items-center justify-center transition">
+              <div class="w-11 h-8 border border-slate-600 rounded grid grid-cols-2 gap-0.5 p-0.5 mb-1.5 bg-white">
+                <div class="bg-slate-800 rounded-sm"></div>
+                <div class="grid grid-rows-2 gap-0.5">
+                  <div class="bg-slate-500 rounded-sm"></div>
+                  <div class="bg-slate-500 rounded-sm"></div>
+                </div>
+              </div>
+              <span class="text-[11px] font-bold leading-tight">1|2</span>
+              <span class="text-[10px] opacity-75 scale-90">左一右二</span>
+            </button>
+
+            <!-- 2x2 四分屏 -->
+            <button type="button" onclick="setTemplate('2x2')" data-tpl="2x2" class="tpl-btn p-2 rounded-xl border-2 border-slate-200 hover:border-slate-300 text-slate-700 flex flex-col items-center justify-center transition">
+              <div class="w-11 h-8 border border-slate-600 rounded grid grid-cols-2 grid-rows-2 gap-0.5 p-0.5 mb-1.5 bg-white">
+                <div class="bg-slate-600 rounded-sm"></div>
+                <div class="bg-slate-600 rounded-sm"></div>
+                <div class="bg-slate-600 rounded-sm"></div>
+                <div class="bg-slate-600 rounded-sm"></div>
+              </div>
+              <span class="text-[11px] font-bold leading-tight">2×2</span>
+              <span class="text-[10px] opacity-75 scale-90">四象限</span>
+            </button>
+
+            <!-- 1x2 左右双栏 -->
+            <button type="button" onclick="setTemplate('1x2')" data-tpl="1x2" class="tpl-btn p-2 rounded-xl border-2 border-slate-200 hover:border-slate-300 text-slate-700 flex flex-col items-center justify-center transition">
+              <div class="w-11 h-8 border border-slate-600 rounded grid grid-cols-2 gap-0.5 p-0.5 mb-1.5 bg-white">
+                <div class="bg-slate-700 rounded-sm"></div>
+                <div class="bg-slate-700 rounded-sm"></div>
+              </div>
+              <span class="text-[11px] font-bold leading-tight">1×2</span>
+              <span class="text-[10px] opacity-75 scale-90">左右双栏</span>
+            </button>
+
+            <!-- 1x1 全屏单卡 -->
+            <button type="button" onclick="setTemplate('1x1')" data-tpl="1x1" class="tpl-btn p-2 rounded-xl border-2 border-slate-200 hover:border-slate-300 text-slate-700 flex flex-col items-center justify-center transition">
+              <div class="w-11 h-8 border border-slate-600 rounded p-0.5 mb-1.5 bg-white flex">
+                <div class="bg-slate-800 rounded-sm w-full h-full"></div>
+              </div>
+              <span class="text-[11px] font-bold leading-tight">1×1</span>
+              <span class="text-[10px] opacity-75 scale-90">全屏单卡</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- STEP 2: Interactive Visual Card Grid for Selecting Data Sources per Slot -->
+        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+          <div class="flex items-center justify-between mb-2.5">
+            <label class="text-xs font-bold text-slate-600 uppercase tracking-wider">2. 为当前页各卡片槽位选择数据源</label>
+            <span id="layoutSpecTag" class="text-[11px] font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded">2|1 左二右一</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mb-3">可选「系统内置数据源」或外部插件数据源：</p>
+
+          <!-- Dynamic 2D Visual Slot Grid -->
+          <div id="visualSlotGrid" class="bg-slate-100 p-2.5 rounded-xl border border-slate-200"></div>
+        </div>
+
+        <!-- External Plugin Loader Switches -->
+        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold text-slate-700">🔌 外部扩展插件 (启用后自动注入槽位数据源)</span>
+          </div>
+          <div id="pluginToggleList" class="grid grid-cols-2 gap-2"></div>
+        </div>
+
+        <!-- Primary Action: Save & Publish -->
+        <button id="pushBtn" onclick="pushToDevice()" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 px-4 rounded-xl shadow-md transition text-sm flex items-center justify-center space-x-2">
+          <span id="pushBtnLabel">📲 保存并发布看板</span>
+        </button>
+
+      </div>
+
+      <!-- ==================== TAB 2: 时段排程 (Schedule & DND) ==================== -->
+      <div id="tabPaneSchedule" class="hidden space-y-4">
+
+        <!-- 24h Time-Slot Schedule & DND Card -->
+        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3.5">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
+            <div>
+              <span class="text-xs font-bold text-slate-800 block">⏰ 24 小时时段排程与休眠 (DND)</span>
+              <span class="text-[11px] text-slate-400">按时段指定展示页面与翻页行为</span>
+            </div>
+            <label class="flex items-center space-x-1.5 text-xs font-bold text-slate-700 shrink-0 cursor-pointer">
+              <input type="checkbox" id="scheduleEnabled" class="rounded text-indigo-600 focus:ring-0"><span>启用排程</span>
+            </label>
+          </div>
+
+          <!-- Lifespan Tip -->
+          <div class="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-[11px] text-slate-600 leading-relaxed">
+            🛡️ <strong>墨水屏寿命保护：</strong>休眠时段屏幕保持静止不刷新，零点日期在后台静默计算；早晨唤醒时一次性刷新推送到屏幕，最大化减少微胶囊磨损与功耗。
+          </div>
+
+          <!-- Current Schedule Status -->
+          <div>
+            <label class="block text-[11px] font-bold text-slate-500 mb-1">当前排程执行状态</label>
+            <div id="scheduleStatus" class="text-[11px] font-mono bg-slate-100 text-slate-700 px-3 py-2 rounded-xl border border-slate-200"></div>
+          </div>
+
+          <!-- Active Daytime Refresh Interval -->
+          <div class="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
+            <span class="text-[11px] text-slate-600 font-medium">非休眠时段数据保鲜周期:</span>
+            <select id="scheduleRefreshSelect" class="bg-white border border-slate-300 text-xs font-mono font-bold rounded-lg px-2.5 py-1">
+              <option value="900">15 分钟</option>
+              <option value="1800">30 分钟</option>
+              <option value="3600">1 小时</option>
+              <option value="7200">2 小时</option>
+            </select>
+          </div>
+
+          <!-- Rules List Container -->
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 mb-1.5">时段排期规则列表</label>
+            <div id="scheduleRules" class="space-y-2"></div>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex gap-2 pt-1">
+            <button type="button" onclick="addScheduleRule()" class="flex-1 text-xs font-bold py-2.5 px-3 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 transition">
+              + 新增时段规则
+            </button>
+            <button type="button" onclick="saveSchedule()" class="flex-1 text-xs font-bold py-2.5 px-3 rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition shadow-sm">
+              💾 保存排程设置
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ==================== TAB 3: 数据源设置 (Data Sources) ==================== -->
+      <div id="tabPaneData" class="hidden space-y-4">
+
+        <!-- Summary & Info Card -->
+        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+            <div>
+              <span class="text-xs font-bold text-slate-800 block">🔌 数据源与卡片详细配置</span>
+              <span class="text-[11px] text-slate-400">配置各内置数据源与已启用外部插件的内容</span>
+            </div>
+            <span id="activeSourcesSummary" class="text-[11px] text-indigo-600 font-medium"></span>
+          </div>
+
+          <!-- (A) P0 Plugin: External ICS Calendar & Countdowns Config ('agenda') -->
+          <div id="dsConfigAgenda" class="hidden bg-indigo-50/60 p-3.5 rounded-xl border border-indigo-200 space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <span class="text-xs font-bold text-indigo-950 block">📆 [P0 外部插件] 外部日历同步与倒数日 (ICS)</span>
+                <span class="text-[11px] text-slate-500">支持订阅 iCloud / Google / 飞书 .ics 链接 + 自定义日程与重要倒数日</span>
+              </div>
+              <span class="text-[10px] font-bold bg-indigo-600 text-white px-2 py-0.5 rounded">方案 A 独立卡 + 月历打点</span>
+            </div>
+
+            <!-- ICS URLs input -->
+            <div>
+              <label class="block text-[11px] font-bold text-slate-600 mb-1">外部 .ics 订阅链接（每行一个 URL，支持 https:// 或 webcal://）</label>
+              <textarea id="agendaIcsUrls" rows="2" placeholder="例如: https://pXX-caldav.icloud.com/published/2/... 或飞书/Google .ics 链接" class="w-full bg-white border border-slate-300 text-slate-800 text-xs rounded-lg p-2 font-mono resize-none"></textarea>
+            </div>
+
+            <!-- Custom Schedule & Countdown Items -->
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <label class="text-[11px] font-bold text-slate-600">自定义日程与纪念日倒数（日期填 <code class="bg-white px-1 rounded">YYYY-MM-DD</code>、<code class="bg-white px-1 rounded">MM-DD</code> 或 <code class="bg-white px-1 rounded">+天数</code>）</label>
+                <button type="button" onclick="addAgendaItemRow()" class="text-[11px] text-indigo-700 hover:text-indigo-900 font-bold">+ 新增日程/倒数日</button>
+              </div>
+              <div id="agendaItemsContainer" class="space-y-1.5 max-h-52 overflow-y-auto pr-1"></div>
+            </div>
+
+            <button type="button" onclick="saveAgendaPluginConfig()" class="w-full bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-bold py-2 rounded-lg transition shadow-sm">
+              🔄 保存 ICS 与日程倒数配置并刷新预览
+            </button>
+          </div>
+
+          <!-- (B) Weather Data Source Config (Built-in) -->
+          <div id="dsConfigWeather" class="hidden bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-700">🌤️ [内置] 实时气象数据源 · 城市设置</span>
+              <span class="text-[11px] text-slate-400">wttr.in 实时气象</span>
+            </div>
+            <div class="flex space-x-2">
+              <select id="cityQuickSelect" onchange="onQuickCitySelect(this.value)" class="bg-white border border-slate-300 text-slate-800 text-xs rounded-lg px-2.5 py-2 font-medium">
+                <option value="Beijing">北京 (Beijing)</option>
+                <option value="Shanghai">上海 (Shanghai)</option>
+                <option value="Guangzhou">广州 (Guangzhou)</option>
+                <option value="Shenzhen">深圳 (Shenzhen)</option>
+                <option value="Hangzhou">杭州 (Hangzhou)</option>
+                <option value="Chengdu">成都 (Chengdu)</option>
+                <option value="Wuhan">武汉 (Wuhan)</option>
+                <option value="Nanjing">南京 (Nanjing)</option>
+                <option value="custom">自定义城市…</option>
+              </select>
+              <input id="cityInput" type="text" value="Beijing" placeholder="输入城市名或拼音" onkeydown="if(event.key==='Enter') saveWeatherCity()" class="flex-1 bg-white border border-slate-300 text-slate-800 text-xs rounded-lg px-2.5 py-2 font-medium">
+              <button onclick="saveWeatherCity()" class="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition">更新</button>
+            </div>
+          </div>
+
+          <!-- (C) Todo Data Source Config (Built-in) -->
+          <div id="dsConfigTodo" class="hidden bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-700">☑️ [内置] 待办清单数据源 · 任务编辑</span>
+              <button onclick="clearDoneTodos()" class="text-[11px] text-slate-400 hover:text-rose-600 transition">清理已完成项</button>
+            </div>
+            <div class="flex space-x-2">
+              <input id="newTodoInput" type="text" placeholder="输入新待办事项，按回车添加…" onkeydown="if(event.key==='Enter') addTodo()" class="flex-1 bg-white border border-slate-300 text-slate-800 text-xs rounded-lg px-2.5 py-2 font-medium">
+              <button onclick="addTodo()" class="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition">添加</button>
+            </div>
+            <div id="todoListContainer" class="max-h-44 overflow-y-auto space-y-1.5 pr-1"></div>
+          </div>
+
+          <!-- (D) Sensors Data Source Config (External Plugin) -->
+          <div id="dsConfigSensors" class="hidden bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-700">🌡️ [外部插件] Home Assistant 环境传感器配置</span>
+              <button onclick="addSensorRow()" class="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold">+ 新增传感器行</button>
+            </div>
+            <div id="sensorListContainer" class="space-y-1.5 max-h-48 overflow-y-auto pr-1"></div>
+            <button onclick="saveSensorsConfig()" class="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-2 rounded-lg transition">应用传感器列表并刷新预览</button>
+          </div>
+
+          <!-- (E) Calendar Data Source Info (Built-in) -->
+          <div id="dsConfigCalendar" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between">
+            <div>
+              <span class="text-xs font-bold text-slate-700 block">📅 [内置] 日历与农历节气数据源</span>
+              <span class="text-[11px] text-slate-500">自动同步公历、1900-2050 农历干支节气；启用 ICS 插件后自动在有日程的日期下打点标记</span>
+            </div>
+            <span class="text-[11px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded shrink-0">实时计算</span>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- ==================== TAB 4: 设备与通知 (Device & Alerts) ==================== -->
+      <div id="tabPaneDevice" class="hidden space-y-4">
+
+        <!-- STEP 4: Real-Time Big-Text Alert Notification Card -->
+        <div id="dsConfigAlert" class="bg-white p-4 rounded-2xl shadow-sm border-2 border-rose-200 space-y-3">
+          <div class="flex items-center justify-between border-b border-rose-100 pb-2.5">
+            <div>
+              <label class="text-xs font-bold text-rose-700 uppercase tracking-wider block">🚨 实时大字通知推送与预览</label>
+              <span class="text-[11px] text-slate-400">输入文字可实时预览全屏大字排版，或一键插播至终端</span>
+            </div>
+            <button type="button" onclick="setPreviewMode('alert')" class="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-2.5 py-1.5 rounded-lg transition shrink-0">
+              👁️ 预览大字效果
+            </button>
+          </div>
+
+          <div class="space-y-2">
+            <div>
+              <label class="block text-[11px] font-bold text-slate-500 mb-1">通知大标题</label>
+              <input id="alertTitle" type="text" value="桌面重点备忘提醒" oninput="onAlertInput()" onfocus="setPreviewMode('alert')" placeholder="通知/备忘标题" class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs rounded-lg p-2 font-bold focus:bg-white">
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-500 mb-1">大字通知正文（支持多行自动折行排版）</label>
+              <textarea id="alertText" rows="3" oninput="onAlertInput()" onfocus="setPreviewMode('alert')" placeholder="输入通知或备忘正文（自动多行折行排版）…" class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs rounded-lg p-2 font-medium resize-none focus:bg-white">下午 15:00 系统架构评审会议，请提前准备好演示文稿与测试环境。</textarea>
+            </div>
+            <div class="flex items-center space-x-2">
+              <div class="flex-1">
+                <label class="block text-[10px] font-bold text-slate-400 mb-0.5">来源 / 署名</label>
+                <input id="alertSender" type="text" value="OpenInk Studio" oninput="onAlertInput()" onfocus="setPreviewMode('alert')" placeholder="署名/来源" class="w-full bg-slate-50 border border-slate-300 text-xs rounded-lg p-2 font-medium focus:bg-white">
+              </div>
+              <div class="w-24">
+                <label class="block text-[10px] font-bold text-slate-400 mb-0.5">停留时长(分钟)</label>
+                <input id="alertDuration" type="number" value="15" min="1" max="120" oninput="onAlertInput()" onfocus="setPreviewMode('alert')" class="w-full bg-slate-50 border border-slate-300 text-xs rounded-lg p-2 font-bold text-center focus:bg-white">
+              </div>
+            </div>
+          </div>
+
+          <div class="flex space-x-2 pt-1">
+            <button type="button" onclick="sendAlert()" class="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 px-3 rounded-xl shadow-sm transition text-xs flex items-center justify-center space-x-1">
+              <span>🚨 立即发布大字通知</span>
+            </button>
+            <button type="button" onclick="dismissAlert()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2.5 px-3 rounded-xl transition text-xs">
+              ↩️ 恢复常规看板
+            </button>
+          </div>
+        </div>
+
+        <!-- Device Info & Rotation Card -->
+        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+            <span class="text-xs font-bold text-slate-800">🖥️ 终端设备交互与测试</span>
+            <span class="text-[11px] text-slate-400">USB-Net / Wi-Fi 长轮询推送</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" onclick="flipScreen180()" class="bg-slate-50 hover:bg-slate-100 border border-slate-200 p-2.5 rounded-xl text-left transition">
+              <span class="block text-xs font-bold text-slate-800 mb-0.5">🔄 翻转屏幕 180°</span>
+              <span class="block text-[10px] text-slate-500">倒置或换支架方向时一键翻转</span>
+            </button>
+            <a href="/kiosk" target="_blank" class="bg-slate-50 hover:bg-slate-100 border border-slate-200 p-2.5 rounded-xl text-left transition block">
+              <span class="block text-xs font-bold text-slate-800 mb-0.5">🖥️ 打开 Web Kiosk</span>
+              <span class="block text-[10px] text-slate-500">在平板或新窗口全屏全彩预览</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- Optional API Token -->
+        <details id="apiTokenDetails" class="hidden bg-white px-4 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-500">
+          <summary class="cursor-pointer font-medium">🔒 访问密钥 (API Token)</summary>
+          <div class="mt-2.5">
+            <input id="apiTokenInput" type="password" placeholder="输入 OPENINK_API_TOKEN" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-xs rounded-lg p-2">
+          </div>
+        </details>
+
+      </div>
+
     </div>
 
   </main>
@@ -495,6 +588,34 @@
     let currentAgendaItems = [];
     let previewMode = "dashboard"; // "dashboard" | "alert"
 
+    // === Settings Tab Switcher ===
+    const SETTINGS_TABS = ['layout', 'schedule', 'data', 'device'];
+
+    function switchSettingsTab(tabKey) {
+      if (!SETTINGS_TABS.includes(tabKey)) tabKey = 'layout';
+      try {
+        localStorage.setItem('openink_active_tab', tabKey);
+      } catch {}
+
+      SETTINGS_TABS.forEach(t => {
+        const btnId = `tabBtn${t.charAt(0).toUpperCase() + t.slice(1)}`;
+        const paneId = `tabPane${t.charAt(0).toUpperCase() + t.slice(1)}`;
+        const btn = document.getElementById(btnId);
+        const pane = document.getElementById(paneId);
+        if (t === tabKey) {
+          if (btn) {
+            btn.className = "py-2 px-1 text-center rounded-xl text-xs font-bold transition flex flex-col sm:flex-row items-center justify-center space-x-0 sm:space-x-1 bg-slate-900 text-white shadow-sm";
+          }
+          if (pane) pane.classList.remove('hidden');
+        } else {
+          if (btn) {
+            btn.className = "py-2 px-1 text-center rounded-xl text-xs font-bold transition flex flex-col sm:flex-row items-center justify-center space-x-0 sm:space-x-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100";
+          }
+          if (pane) pane.classList.add('hidden');
+        }
+      });
+    }
+
     function getCurrentPage() {
       if (activePageIndex < 0 || activePageIndex >= dashboardPages.length) {
         activePageIndex = 0;
@@ -578,7 +699,6 @@
 
     function addDashboardPage() {
       const nextNum = dashboardPages.length + 1;
-      // Default new page to 1_2 or 1x2 with enabled plugin if available
       const defaultRight = enabledPluginIds.includes('agenda') ? 'agenda' : 'todo';
       dashboardPages.push({
         id: `page_${nextNum}`,
@@ -675,6 +795,9 @@
     function setPreviewMode(mode, shouldRender = true) {
       previewMode = mode;
       updatePreviewModeUI();
+      if (mode === 'alert') {
+        switchSettingsTab('device');
+      }
       if (shouldRender) {
         updatePreview();
       }
@@ -914,6 +1037,7 @@
           })
         });
         if (resp.status === 401) {
+          switchSettingsTab('device');
           const det = document.getElementById('apiTokenDetails');
           if (det) { det.classList.remove('hidden'); det.open = true; }
         }
@@ -1411,6 +1535,12 @@
       updateDataSourceConfigPanels();
       loadTodos();
       updatePreview();
+
+      let savedTab = 'layout';
+      try {
+        savedTab = localStorage.getItem('openink_active_tab') || 'layout';
+      } catch {}
+      switchSettingsTab(savedTab);
     }
 
     initStudio();
