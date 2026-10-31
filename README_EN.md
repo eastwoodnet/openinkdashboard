@@ -2,31 +2,44 @@
 
 [English](README_EN.md) | [简体中文](README.md)
 
-**OpenInk (v1.2)** is a high-performance, self-hosted (BYOS) dashboard service and visual layout engine for Electronic Paper Displays (E-Ink). Built upon a **Python Cairo/Pango geometric vector rendering pipeline** and a **modular external data plugin architecture**, OpenInk provides multi-page layout composition, sub-second universal HTTP long-polling incremental updates, dual-mode rotation (carousel/manual), and physical device interaction handling.
+**OpenInk (v1.3)** is a high-performance, self-hosted (BYOS) dashboard service and visual layout engine for Electronic Paper Displays (E-Ink). Built upon a **Python Cairo/Pango geometric vector rendering pipeline** and a **modular external data plugin architecture**, OpenInk provides 24h time-slot scheduling with DND screen lifespan protection, multi-page layout composition, sub-second universal HTTP long-polling incremental updates, dual-mode rotation, and physical device interaction handling.
 
 ---
 
-## 🌟 Core Features (v1.2)
+## 🌟 Core Features (v1.3)
 
-1. **Decoupled Built-in Core vs. External Plugin Architecture (`src/plugins/`)**
+1. **24-Hour Time-Slot Scheduler & E-Ink Lifespan DND Protection (`src/scheduler.py`)**
+   - **Customizable Daily Time Slots**: Independently configure active pages, rotation modes, and refresh intervals across distinct time windows (e.g., Morning Focus, Daytime Work, Evening Relax, Night Sleep), with full cross-midnight support.
+   - **Screen Lifespan Protection (DND)**: During sleep/DND hours, the physical screen stays motionless without refreshing. Dates and calendar data update silently in the background at midnight (00:00), waking up with a single clean refresh to minimize microcapsule fatigue and power consumption.
+   - **Smart In-Place Refresh**: During active hours, background scheduler polls data sources periodically and only triggers hardware refreshes when content hashes change.
+
+2. **Redesigned Modern Two-Column Web Studio (`templates/studio.html`)**
+   - **Sticky Left Column**: Real-time 800×600 canvas preview with 1:1 pixel rendering, render latency and file size indicators, and a one-click toggle between standard dashboard and full-screen big-text alert preview.
+   - **Categorized 4-Tab Right Column**:
+     - `📑 Pages & Layout`: Page tabs, carousel/manual modes, 5 golden grid templates, slot widget picker, and external plugin switches.
+     - `⏰ Time Schedule`: 24h schedule switch, active rule countdown status, refresh intervals, and dynamic rule editor.
+     - `🔌 Data Sources`: Detailed configuration for external ICS calendar & countdowns, live weather city, online todo manager, Home Assistant sensors, and lunar calendar.
+     - `⚙️ Device & Alerts`: Instant big-text emergency push, 180° screen rotation, Web Kiosk launcher, and API Token.
+
+3. **Decoupled Built-in Core vs. External Plugin Architecture (`src/plugins/`)**
    - **Built-in Core Data Sources**: Solar/Lunar calendar with Chinese Ganzhi and 24 Solar Terms (`calendar`), live weather with multi-day forecasts (`weather`), local todo management (`todo`), full-screen focus broadsheet (`focus`), and instant notification overlay (`alert`).
    - **Dynamic External Plugins**: Loaded on-demand according to `plugins.<id>.enabled` in `config.json`:
      - **P0 Plugin (`agenda`)**: Subscribes to remote `.ics` calendars (iCloud, Google Calendar, Feishu/Lark, DingTalk, Outlook, Nextcloud), calculates milestones and countdowns, and links event dots on the monthly calendar.
      - **Environment Plugin (`sensors`)**: Integrates with Home Assistant REST API for indoor room temperature, humidity, and sensor state monitoring.
 
-2. **Multi-Page Layout Composition & Grid Reusability (`LayoutComposer`)**
+4. **Multi-Page Layout Composition & Grid Reusability (`LayoutComposer`)**
    - Built-in 5 golden grid layout templates: `2|1 (left two, right one)`, `1|2 (left one, right two)`, `2×2 (four quadrants)`, `1×2 (dual column)`, and `1×1 (full-screen broadside)`.
    - Free multi-page expansion: Page 1, Page 2, Page 3... each page independently configures its grid template and widget slots.
    - Dual playlist switching: **Automatic Carousel (`carousel`)** and **Manual Pagination (`manual`)**, with interval ranges from 30 seconds up to 24 hours.
 
-3. **Universal Pull Protocol & Long-Polling Synchronization (`/api/v1/*` + `/kiosk`)**
-   - `GET /api/v1/display`: Returns playlist manifest, per-page short MD5 hashes, rotation mode, and instant alert status.
+5. **Universal Pull Protocol & Long-Polling Synchronization (`/api/v1/*` + `/kiosk`)**
+   - `GET /api/v1/display`: Returns playlist manifest, per-page short MD5 hashes, rotation mode, schedule status, and instant alert status.
    - `GET /api/v1/wait`: `asyncio.Event`-based HTTP long-polling suspension endpoint, delivering millisecond-level responsiveness for layout updates and urgent notifications.
    - `GET /api/v1/assets/{bucket}/{filename}`: Distributes 16-level grayscale PNGs tailored for portrait hardware (`portrait`, 600×800) and landscape/web displays (`landscape`, 800×600).
    - `GET/POST /api/v1/event`: Terminal key and touch event callbacks (toggle todo, clear completed, dismiss alert, refresh data).
    - `GET /kiosk`: Zero-install full-screen Web Kiosk terminal with keyboard navigation, full-screen toggle, and interactive todo check-off.
 
-4. **Configurable Port & Multi-Service Coexistence (`OPENINK_PORT`)**
+6. **Configurable Port & Multi-Service Coexistence (`OPENINK_PORT`)**
    - Configurable listening port via the `OPENINK_PORT` environment variable (default: `8080`). Seamlessly coexists on the same Linux/Armbian host with existing services running on port 8000 (such as `esp32-gateway` or other relays).
 
 ---
