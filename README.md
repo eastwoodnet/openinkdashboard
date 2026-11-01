@@ -25,7 +25,11 @@
    - **内置核心数据源**：公历/农历干支节气日历 (`calendar`)、实时天气与未来趋势 (`weather`)、待办清单管理 (`todo`)、综合焦点画报 (`focus`)、即时大字通知 (`alert`)。
    - **外部数据源插件**：根据 `config.json` 中 `plugins.<id>.enabled` 动态按需加载：
      - **0 级插件 (`agenda`)**：订阅 iCloud / Google / 飞书等 `.ics` 外部日历，支持日程重要度高亮、纪念日/倒数日计算，并自动联动月历打点。
-     - **环境插件 (`sensors`)**：接入 Home Assistant 室内温湿度与环境指标。
+     - **环境插件 (`sensors` · Home Assistant 深度集成)**：
+       - **显式实例配置与安全凭据隔离**：支持自定义 Base URL 与长期访问令牌 (Token)，凭据通过 `0600` 权限安全存入 `.env`（严格受 `.gitignore` 保护，绝不入库泄露），前端回显自动掩码（`***`）。
+       - **一键连通性测试 (`POST /api/ha/test`)**：即时验证 HA 实例连通性并回显 HA Core 运行版本号。
+       - **在线实体自动发现 (`GET /api/ha/entities`)**：在线枚举 HA 实例所有 `sensor.*` 实体（智能优先温湿度），支持关键词实时过滤与一键勾选添加。
+       - **三列映射与优雅回退**：灵活定义卡片显示名称、`entity_id` 与离线回退显示值，彻底告别写死数据，网络异常时平滑降级。
 
 4. **多页动态编排与版式复用 (`LayoutComposer`)**
    - 内置 5 套黄金网格分栏：`2|1 左二右一`、`1|2 左一右二`、`2×2 四象限`、`1×2 左右双栏`、`1×1 全屏单卡`。
@@ -112,9 +116,11 @@ sudo systemctl status openink
 ./clients/n516-openinkpot/install_n516.sh n516
 ```
 
+- **BusyBox `init` 原生级常驻守护**：写入 `/etc/inittab` (`::respawn:/usr/local/bin/openink-agent.sh`)，无论断网重连、异常退出还是设备冷重启，均由系统 1 号进程自动毫秒级拉起，无需任何后台 nohup。
+- **双重防死锁超时保护**：集成 `busybox-full timeout` 与 `wget -T` 双层网络超时，彻底杜绝嵌入式精简 TCP 栈在长轮询中断开导致的进程死锁挂起。
 - **持久化按键生成**：守护进程启动时自动在 `/tmp/openink_keys/` 动态构建 64 字节 Linux `struct input_event` 二进制流，彻底解决 `/tmp` 重启丢失按键的问题。
 - **150ms 无闪原地刷新**：利用双缓冲机制与 `NEXT_IMAGE` 步进，绕过 madeye 内存文件缓存，无需重启窗口即可原地刷新。
-- **智能休眠省电**：仅当 USB 处于联网状态 (`carrier=1`) 时保持拉取与轮播；断开 USB 时守护进程自动退出，设备进入原生硬件深度休眠，充当纯粹的电子书。
+- **断网 0% CPU 智能休眠自愈**：当 USB 断开时以 0% CPU 智能休眠等待重连，插上 USB 即刻自愈恢复同步，无需手动干预。
 
 ### 2. 亚马逊 Kindle 与通用 Wi-Fi 墨水屏终端说明
 

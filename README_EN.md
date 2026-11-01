@@ -25,7 +25,11 @@
    - **Built-in Core Data Sources**: Solar/Lunar calendar with Chinese Ganzhi and 24 Solar Terms (`calendar`), live weather with multi-day forecasts (`weather`), local todo management (`todo`), full-screen focus broadsheet (`focus`), and instant notification overlay (`alert`).
    - **Dynamic External Plugins**: Loaded on-demand according to `plugins.<id>.enabled` in `config.json`:
      - **P0 Plugin (`agenda`)**: Subscribes to remote `.ics` calendars (iCloud, Google Calendar, Feishu/Lark, DingTalk, Outlook, Nextcloud), calculates milestones and countdowns, and links event dots on the monthly calendar.
-     - **Environment Plugin (`sensors`)**: Integrates with Home Assistant REST API for indoor room temperature, humidity, and sensor state monitoring.
+     - **Environment Plugin (`sensors` · Home Assistant Deep Integration)**:
+       - **Explicit Instance Setup & Secret Isolation**: Easily configure HA Base URL and Long-Lived Access Token. Tokens are securely persisted in local `.env` with `0600` permissions (guarded by `.gitignore`, never committed to Git), with frontend masked display (`***`).
+       - **One-Click Connectivity Testing (`POST /api/ha/test`)**: Verifies connection and authentication against the HA API, echoing back the live HA Core version.
+       - **Online Entity Discovery (`GET /api/ha/entities`)**: Discovers and inspects all `sensor.*` entities across your smart home (prioritizing temperature and humidity) with real-time keyword filtering and one-click addition.
+       - **3-Column Mapping & Smooth Fallback**: Customize card display names, `entity_id`, and offline preview values, completely eliminating hardcoded defaults.
 
 4. **Multi-Page Layout Composition & Grid Reusability (`LayoutComposer`)**
    - Built-in 5 golden grid layout templates: `2|1 (left two, right one)`, `1|2 (left one, right two)`, `2×2 (four quadrants)`, `1×2 (dual column)`, and `1×1 (full-screen broadside)`.
@@ -112,9 +116,11 @@ For Hanvon N516 USB Network devices, a persistent, power-efficient client daemon
 ./clients/n516-openinkpot/install_n516.sh n516
 ```
 
+- **BusyBox `init` Native Supervision**: Configured in `/etc/inittab` (`::respawn:/usr/local/bin/openink-agent.sh`) for millisecond-level daemon auto-healing upon any exit, USB reconnect, or cold system reboot.
+- **Dual Deadlock-Proof Timeouts**: Employs `busybox-full timeout` combined with `wget -T` to prevent embedded TCP socket hangs during long-polling requests.
 - **Reboot-Safe Key Injections**: On startup, the daemon dynamically creates 64-byte Linux `struct input_event` binary files in `/tmp/openink_keys/`, completely solving the reboot-loss issue on tmpfs.
 - **150ms Flicker-Free In-Place Refresh**: Bypasses `madeye` memory image caches using dual-buffering and `NEXT_IMAGE` steps, achieving in-place screen updates without restarting the GUI.
-- **Smart Power-Saving**: Runs long polling and image rotation only when USB network carrier is active (`carrier=1`); exits immediately into deep sleep when USB is disconnected.
+- **Zero-CPU Offline Smart Sleep & Auto-Recovery**: Sleeps cleanly with 0% CPU usage when USB carrier drops and auto-recovers synchronization immediately when reconnected.
 
 ### 2. Amazon Kindle & Generic Wi-Fi E-Ink Devices
 
