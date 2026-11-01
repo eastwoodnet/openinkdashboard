@@ -80,7 +80,7 @@ def _fetch_sensors_plugin(cfg: Dict[str, Any], force_refresh: bool = False) -> L
     fallback = []
     for s in (sensor_cfgs or defaults):
         name = s.get("name", "传感器")
-        disp = s.get("display") or default_map.get(name, "22.0 °C")
+        disp = s.get("display") or default_map.get(name, "--")
         fallback.append({"id": s.get("id", ""), "name": name, "display": disp})
     return fallback
 

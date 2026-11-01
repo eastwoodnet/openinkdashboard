@@ -23,7 +23,16 @@ from PIL import Image
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(BASE_DIR, "src"))
 
-from config import load_config, save_config, get_secret, normalize_dashboard_pages, sanitize_for_client
+from config import (
+    load_config,
+    save_config,
+    get_secret,
+    normalize_dashboard_pages,
+    sanitize_for_client,
+    validate_external_url,
+    save_env_secret,
+)
+from plugins.homeassistant import HomeAssistantClient
 from profiles import get_profile
 from layout_composer import LayoutComposer
 from calendar_info import get_calendar_info
@@ -476,8 +485,14 @@ class ConfigUpdateRequest(BaseModel):
     pages: Optional[List[Dict[str, Any]]] = None
     plugins: Optional[Dict[str, Any]] = None
     sensors: Optional[List[Dict[str, str]]] = None
+    homeassistant: Optional[Dict[str, Any]] = None
     rotation: Optional[int] = None
     schedule: Optional[Dict[str, Any]] = None
+
+
+class HATestRequest(BaseModel):
+    url: Optional[str] = None
+    token: Optional[str] = None
 
 
 class DeviceRotationRequest(BaseModel):
@@ -795,6 +810,9 @@ def get_config_api():
     ctx = get_fresh_context()
     dash = cfg.get("dashboard", {})
     pages = normalize_dashboard_pages(cfg)
+    ha_cfg = cfg.get("homeassistant", {})
+    ha_token = get_secret(ha_cfg, "token")
+    ha_token_masked = (ha_token[:6] + "..." + ha_token[-4:]) if len(ha_token) > 10 else ("***" if ha_token else "")
     return {
         "city": cfg.get("city", "Beijing"),
         "auth_required": bool(API_TOKEN),
@@ -811,6 +829,12 @@ def get_config_api():
         "plugins": sanitize_for_client(cfg.get("plugins", {})),
         "plugin_catalog": PLUGIN_CATALOG,
         "enabled_plugins": get_enabled_plugin_ids(cfg),
+        "homeassistant": {
+            "url": ha_cfg.get("url", ""),
+            "token_set": bool(ha_token),
+            "token_masked": ha_token_masked,
+            "sensors": ha_cfg.get("sensors", [])
+        },
         "sensors": ctx.get("sensors", []),
         "agenda": ctx.get("agenda", {}),
         "schedule": normalize_schedule_config(cfg.get("schedule")),
@@ -869,11 +893,27 @@ def update_config_api(
         updates["plugins"] = cur_plugins
         force_refresh = True
 
+    if req.homeassistant is not None:
+        cfg = load_config()
+        ha = dict(cfg.get("homeassistant", {}))
+        ha_in = req.homeassistant
+        if "url" in ha_in and ha_in["url"] is not None:
+            ha["url"] = validate_external_url(ha_in["url"].strip(), allow_private_lan=True)
+        if "sensors" in ha_in and isinstance(ha_in["sensors"], list):
+            ha["sensors"] = ha_in["sensors"]
+        token_val = ha_in.get("token")
+        if token_val and not token_val.startswith("***"):
+            save_env_secret("HA_TOKEN", token_val.strip())
+            ha["token_env"] = "HA_TOKEN"
+        updates["homeassistant"] = ha
+        force_refresh = True
+
     if req.sensors is not None:
         cfg = load_config()
         ha = dict(cfg.get("homeassistant", {}))
         ha["sensors"] = req.sensors
         updates["homeassistant"] = ha
+        force_refresh = True
 
     if req.rotation is not None and req.rotation in (0, 90, 180, 270):
         updates.setdefault("device", {})["rotation"] = req.rotation
@@ -891,6 +931,10 @@ def update_config_api(
     pages = normalize_dashboard_pages(new_cfg)
     _render_cached_pages(pages_data=pages, force_refresh=False)
 
+    new_ha = new_cfg.get("homeassistant", {})
+    new_ha_token = get_secret(new_ha, "token")
+    new_ha_masked = (new_ha_token[:6] + "..." + new_ha_token[-4:]) if len(new_ha_token) > 10 else ("***" if new_ha_token else "")
+
     return {
         "status": "ok",
         "city": new_cfg.get("city", "Beijing"),
@@ -907,6 +951,12 @@ def update_config_api(
         "plugins": sanitize_for_client(new_cfg.get("plugins", {})),
         "plugin_catalog": PLUGIN_CATALOG,
         "enabled_plugins": get_enabled_plugin_ids(new_cfg),
+        "homeassistant": {
+            "url": new_ha.get("url", ""),
+            "token_set": bool(new_ha_token),
+            "token_masked": new_ha_masked,
+            "sensors": new_ha.get("sensors", [])
+        },
         "sensors": ctx.get("sensors", []),
         "agenda": ctx.get("agenda", {}),
         "schedule": normalize_schedule_config(new_cfg.get("schedule")),
@@ -914,6 +964,54 @@ def update_config_api(
         "weather": ctx.get("weather", {}),
         "version": display_manager.version,
     }
+
+
+# =========================================================================
+# Home Assistant Integration API (Test & Discovery)
+# =========================================================================
+
+@app.post("/api/ha/test")
+def test_ha_connection_api(
+    req: HATestRequest,
+    token: Optional[str] = Query(None),
+    x_api_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """测试 Home Assistant 实例与 Token 连通性"""
+    _check_token(x_api_token, authorization, token)
+    cfg = load_config()
+    ha_cfg = cfg.get("homeassistant", {})
+    test_url = (req.url or ha_cfg.get("url", "")).strip()
+    test_token = (req.token or get_secret(ha_cfg, "token")).strip()
+    if not test_url:
+        return {"ok": False, "error": "请先输入 Home Assistant 实例地址 (URL)"}
+    if not test_token:
+        return {"ok": False, "error": "请先输入长期访问令牌 (Token)"}
+    ha = HomeAssistantClient(test_url, test_token)
+    return ha.test_connection()
+
+
+@app.get("/api/ha/entities")
+def get_ha_entities_api(
+    url: Optional[str] = Query(None),
+    ha_token: Optional[str] = Query(None, alias="token"),
+    token: Optional[str] = Query(None),
+    x_api_token: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+):
+    """获取 Home Assistant 中的所有传感器实体列表以供一键勾选"""
+    _check_token(x_api_token, authorization, token)
+    cfg = load_config()
+    ha_cfg = cfg.get("homeassistant", {})
+    target_url = (url or ha_cfg.get("url", "")).strip()
+    target_token = (ha_token or get_secret(ha_cfg, "token")).strip()
+    if not target_url:
+        return {"ok": False, "error": "请先配置 Home Assistant 实例地址 (URL)", "entities": []}
+    if not target_token:
+        return {"ok": False, "error": "请先配置长期访问令牌 (Token)", "entities": []}
+    ha = HomeAssistantClient(target_url, target_token)
+    entities = ha.discover_sensors()
+    return {"ok": True, "entities": entities}
 
 
 # =========================================================================

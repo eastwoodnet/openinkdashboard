@@ -14,6 +14,9 @@
 #    无需 killall/重启 madeye 即可在 150ms 内原地无闪切换与更新画面。
 # ==============================================================================
 
+export DISPLAY="${DISPLAY:-:0}"
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
 SERVER="${OPENINK_SERVER:-http://192.168.111.2:8080}"
 DEVICE_ID="${OPENINK_DEVICE_ID:-n516}"
 CACHE_DIR="/tmp/openink_cache"
@@ -22,6 +25,9 @@ KEYS_DIR="/tmp/openink_keys"
 PID_FILE="/tmp/openink-agent.pid"
 LOG_FILE="/tmp/openink-agent.log"
 EVENT_DEV="/dev/event0"
+
+# 清理历史孤儿 wget 进程，防止死连接残留
+killall -9 wget 2>/dev/null || true
 
 # 单实例锁：若已有守护进程存活则直接退出
 if [ -f "$PID_FILE" ]; then
@@ -34,6 +40,34 @@ echo "$$" > "$PID_FILE"
 trap 'rm -f "$PID_FILE"; exit 0' INT TERM EXIT
 
 mkdir -p "$CACHE_DIR" "$DASH_DIR" "$KEYS_DIR"
+
+# ------------------------------------------------------------------------------
+# HTTP 请求辅助函数：优先使用 busybox-full timeout + wget -T 彻底防止 TCP 假死挂起
+# ------------------------------------------------------------------------------
+if [ -x /usr/local/bin/busybox-full ]; then
+    BB="/usr/local/bin/busybox-full"
+elif which busybox >/dev/null 2>&1; then
+    BB="busybox"
+else
+    BB=""
+fi
+
+http_get() {
+    # $1: read timeout seconds
+    # $2: output file (- for stdout)
+    # $3: url
+    _TO="${1:-10}"
+    _OUT="$2"
+    _URL="$3"
+    _HARD_TO=$((_TO + 5))
+    if [ -n "$BB" ] && $BB timeout --help >/dev/null 2>&1; then
+        $BB timeout -t "$_HARD_TO" $BB wget -q -T "$_TO" -O "$_OUT" "$_URL" 2>/dev/null
+    elif [ -n "$BB" ]; then
+        $BB wget -q -T "$_TO" -O "$_OUT" "$_URL" 2>/dev/null
+    else
+        wget -q -O "$_OUT" "$_URL" 2>/dev/null
+    fi
+}
 
 # ------------------------------------------------------------------------------
 # 1. 动态生成 64 字节 MIPS32 little-endian struct input_event 按键注入文件 (重启不丢)
@@ -147,7 +181,7 @@ CAROUSEL_INTERVAL=60
 PAGE_COUNT=1
 
 sync_display() {
-    MANIFEST=$(wget -q -T 5 -O - "$SERVER/api/v1/display?device_id=$DEVICE_ID" 2>/dev/null)
+    MANIFEST=$(http_get 5 - "$SERVER/api/v1/display?device_id=$DEVICE_ID")
     [ -z "$MANIFEST" ] && return 1
 
     VERSION=$(json_str "$MANIFEST" "version")
@@ -165,7 +199,7 @@ sync_display() {
 
     if [ "$ALERT_ACTIVE" = "true" ] && [ -n "$ALERT_URL" ]; then
         if [ "$ALERT_HASH" != "$LAST_ALERT_HASH" ] || [ "$LAST_ALERT_ACTIVE" != "true" ]; then
-            if wget -q -T 5 -O "$CACHE_DIR/00_alert.png.tmp" "$ALERT_URL" 2>/dev/null; then
+            if http_get 5 "$CACHE_DIR/00_alert.png.tmp" "$ALERT_URL"; then
                 mv "$CACHE_DIR/00_alert.png.tmp" "$CACHE_DIR/00_alert.png"
                 # 覆盖 /tmp/dashboard 为双份 00_alert.png，确保一次 NEXT_IMAGE 即可立即全屏呈现通知
                 rm -f "$DASH_DIR"/*.png
@@ -201,7 +235,7 @@ sync_display() {
             VALID_FILES="$VALID_FILES $FNAME"
             OLD_HASH=$(cat "$CACHE_DIR/$FNAME.hash" 2>/dev/null)
             if [ "$FHASH" != "$OLD_HASH" ] || [ ! -s "$CACHE_DIR/$FNAME" ]; then
-                if wget -q -T 8 -O "$CACHE_DIR/$FNAME.tmp" "$FURL" 2>/dev/null; then
+                if http_get 8 "$CACHE_DIR/$FNAME.tmp" "$FURL"; then
                     mv "$CACHE_DIR/$FNAME.tmp" "$CACHE_DIR/$FNAME"
                     echo "$FHASH" > "$CACHE_DIR/$FNAME.hash"
                     ANY_CHANGED=1
@@ -248,21 +282,14 @@ sync_display() {
 # ------------------------------------------------------------------------------
 # 5. 主循环：USB 网络感知 + HTTP 心跳长轮询 (/api/v1/wait) + 自动轮播步进
 # ------------------------------------------------------------------------------
-OFFLINE_STRIKES=0
 ELAPSED_CAROUSEL_SEC=0
 
 while true; do
-    # (A) 检查 USB 网络是否在线：若断开则立即退出守护进程，让 N516 纯粹作为电子书休眠省电
+    # (A) 检查 USB 网络是否在线：若断开则休眠等待，保持 0% CPU 并不退出守护进程
     if ! is_usb_net_online; then
-        OFFLINE_STRIKES=$((OFFLINE_STRIKES + 1))
-        if [ "$OFFLINE_STRIKES" -ge 2 ]; then
-            echo "[OpenInk Agent] USB network disconnected, exiting daemon to save battery." >> "$LOG_FILE"
-            exit 0
-        fi
-        sleep 3
+        sleep 10
         continue
     fi
-    OFFLINE_STRIKES=0
 
     # (B) 同步最新看板与通知
     if ! sync_display; then
@@ -284,7 +311,7 @@ while true; do
     HTTP_TIMEOUT=$((CHUNK_WAIT + 5))
 
     # (D) 发起零功耗长轮询挂起请求 (/api/v1/wait)
-    WAIT_RESP=$(wget -q -T "$HTTP_TIMEOUT" -O - "$SERVER/api/v1/wait?device_id=$DEVICE_ID&version=$LAST_VERSION&timeout=$CHUNK_WAIT" 2>/dev/null)
+    WAIT_RESP=$(http_get "$HTTP_TIMEOUT" - "$SERVER/api/v1/wait?device_id=$DEVICE_ID&version=$LAST_VERSION&timeout=$CHUNK_WAIT")
 
     if [ -z "$WAIT_RESP" ]; then
         sleep 5

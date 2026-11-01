@@ -14,6 +14,26 @@ from typing import Dict, Any, List
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 EXAMPLE_CONFIG_PATH = os.path.join(BASE_DIR, "config.example.json")
+ENV_PATH = os.path.join(BASE_DIR, ".env")
+
+def load_dotenv():
+    """轻量读取本地 .env 文件至环境变量（无需第三方外部依赖库）。"""
+    if os.path.exists(ENV_PATH):
+        try:
+            with open(ENV_PATH, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    k = k.strip()
+                    v = v.strip().strip("'\"")
+                    if k and k not in os.environ:
+                        os.environ[k] = v
+        except Exception as e:
+            print(f"[Config Warning] 读取 .env 失败: {e}")
+
+load_dotenv()
 
 SENSITIVE_KEYS = {"token", "password", "secret", "api_key", "private_key", "access_token"}
 
@@ -241,3 +261,45 @@ def get_secret(section: dict, key: str = "token") -> str:
     if not env_name:
         return section.get(key, "")
     return os.environ.get(env_name, "")
+
+
+def save_env_secret(key: str, value: str) -> bool:
+    """
+    安全保存敏感凭据至本地 .env（已受 .gitignore 隔离，绝不入库），
+    设置 0600 权限并实时同步当前 Python 进程环境变量。
+    """
+    if not key or value is None:
+        return False
+    lines = []
+    found = False
+    if os.path.exists(ENV_PATH):
+        try:
+            with open(ENV_PATH, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception:
+            lines = []
+    new_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith(f"{key}=") or stripped.startswith(f"export {key}="):
+            new_lines.append(f"{key}={value}\n")
+            found = True
+        else:
+            new_lines.append(line)
+    if not found:
+        if new_lines and not new_lines[-1].endswith("\n"):
+            new_lines.append("\n")
+        new_lines.append(f"{key}={value}\n")
+
+    try:
+        with open(ENV_PATH, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+        try:
+            os.chmod(ENV_PATH, 0o600)
+        except OSError:
+            pass
+        os.environ[key] = value
+        return True
+    except Exception as e:
+        print(f"[Config Warning] 保存 .env 密钥失败: {e}")
+        return False

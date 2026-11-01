@@ -28,7 +28,7 @@ class SensorWidget(WidgetBase):
         profile: DeviceProfile
     ):
         sensors = context.get("sensors", [])
-        if not sensors or all(s.get("display") in ("--", "", None) for s in sensors):
+        if not sensors:
             sensors = [
                 {"name": "工作间温度", "display": "22.4 °C"},
                 {"name": "工作间湿度", "display": "48.2 %"},

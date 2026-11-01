@@ -39,6 +39,73 @@ class HomeAssistantClient:
             return None
         return None
 
+    def test_connection(self) -> dict:
+        """测试 Home Assistant 实例与 Token 连通性并获取版本"""
+        if not self.base_url:
+            return {"ok": False, "error": "未提供 Home Assistant 实例地址 (URL)"}
+        if not self.token:
+            return {"ok": False, "error": "未提供长期访问令牌 (Token)"}
+        url = f"{self.base_url}/api/"
+        req = urllib.request.Request(url, headers=self.headers)
+        try:
+            with urllib.request.urlopen(req, context=self.ctx, timeout=4) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read(MAX_HA_RESP_BYTES).decode("utf-8"))
+                    version = ""
+                    try:
+                        cfg_data = self._api_get("config")
+                        if cfg_data and isinstance(cfg_data, dict):
+                            version = cfg_data.get("version", "")
+                    except Exception:
+                        pass
+                    msg = "连接成功！HA API 正常运行" + (f" (版本: {version})" if version else "")
+                    return {"ok": True, "version": version, "message": msg}
+                return {"ok": False, "error": f"HTTP {resp.status} 响应异常"}
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                return {"ok": False, "error": "401 鉴权失败：Token 无效或已过期"}
+            return {"ok": False, "error": f"HTTP 错误 {e.code}: {e.reason}"}
+        except Exception as e:
+            return {"ok": False, "error": f"无法连通 HA 实例: {str(e)}"}
+
+    def discover_sensors(self) -> list:
+        """从 Home Assistant /api/states 获取所有传感器实体并按友好名称与类型排序"""
+        states = self._api_get("states")
+        if not states or not isinstance(states, list):
+            return []
+        sensors = []
+        for entity in states:
+            eid = entity.get("entity_id", "")
+            if not eid.startswith("sensor."):
+                continue
+            attrs = entity.get("attributes", {})
+            dev_class = attrs.get("device_class", "")
+            unit = attrs.get("unit_of_measurement", "")
+            fname = attrs.get("friendly_name") or eid
+            state = entity.get("state", "--")
+            sensors.append({
+                "id": eid,
+                "entity_id": eid,
+                "friendly_name": fname,
+                "state": state,
+                "unit": unit,
+                "device_class": dev_class,
+                "display": f"{state} {unit}".strip() if unit else str(state)
+            })
+
+        def _sort_key(s):
+            dc = s.get("device_class", "")
+            if dc == "temperature":
+                return (0, s["friendly_name"])
+            if dc == "humidity":
+                return (1, s["friendly_name"])
+            if dc in ("battery", "power", "illuminance", "pressure", "energy"):
+                return (2, s["friendly_name"])
+            return (3, s["friendly_name"])
+
+        sensors.sort(key=_sort_key)
+        return sensors
+
     def get_sensors_data(self, sensor_configs: list) -> list:
         """批量获取室内环境传感器状态"""
         results = []
@@ -57,11 +124,12 @@ class HomeAssistantClient:
                     "display": f"{val} {unit}".strip()
                 })
             else:
+                fallback_disp = item.get("display") or "--"
                 results.append({
                     "id": sid,
                     "name": sname,
                     "value": "--",
                     "unit": "",
-                    "display": "--"
+                    "display": fallback_disp
                 })
         return results
