@@ -1,50 +1,31 @@
-# OpenInk · Universal E-Ink Dashboard & Plugin Studio
+# OpenInk (v1.4) · Universal E-Ink Dashboard & Server System
 
 [English](README_EN.md) | [简体中文](README.md)
 
-**OpenInk (v1.3)** is a high-performance, self-hosted (BYOS) dashboard service and visual layout engine for Electronic Paper Displays (E-Ink). Built upon a **Python Cairo/Pango geometric vector rendering pipeline** and a **modular external data plugin architecture**, OpenInk provides 24h time-slot scheduling with DND screen lifespan protection, multi-page layout composition, sub-second universal HTTP long-polling incremental updates, dual-mode rotation, and physical device interaction handling.
+**OpenInk (v1.4)** is a self-hosted (BYOS) dashboard server and visual layout engine for Electronic Paper Displays (E-Ink). Built upon Python Cairo/Pango vector rendering, it supports flexible multi-page layout composition, 24h time-slot scheduling with nighttime DND sleep protection, HTTP long-polling incremental updates, dual-mode rotation, and instant big-text alert broadcasting via API.
 
 ---
 
-## 🌟 Core Features (v1.3)
+## 🌟 Core Features
 
-1. **24-Hour Time-Slot Scheduler & E-Ink Lifespan DND Protection (`src/scheduler.py`)**
-   - **Customizable Daily Time Slots**: Independently configure active pages, rotation modes, and refresh intervals across distinct time windows (e.g., Morning Focus, Daytime Work, Evening Relax, Night Sleep), with full cross-midnight support.
-   - **Screen Lifespan Protection (DND)**: During sleep/DND hours, the physical screen stays motionless without refreshing. Dates and calendar data update silently in the background at midnight (00:00), waking up with a single clean refresh to minimize microcapsule fatigue and power consumption.
-   - **Smart In-Place Refresh**: During active hours, background scheduler polls data sources periodically and only triggers hardware refreshes when content hashes change.
+1. **Time-Slot Scheduling & Nighttime Screen Lifespan Protection (DND)**
+   - Define custom time-slot rules throughout the day (e.g. morning focus, daytime work, evening, night sleep). Each slot can specify active pages and rotation intervals, with cross-midnight support.
+   - During sleep hours, the physical screen remains stationary. Dates and calendar data update silently in the background at midnight (00:00), followed by a single clean refresh upon waking to minimize microcapsule wear and power usage.
+   - During active hours, background scheduler polls data sources periodically and only triggers hardware refreshes when rendered content hashes change.
 
-2. **Redesigned Modern Two-Column Web Studio (`templates/studio.html`)**
-   - **Sticky Left Column**: Real-time 800×600 canvas preview with 1:1 pixel rendering, render latency and file size indicators, and a one-click toggle between standard dashboard and full-screen big-text alert preview.
-   - **Categorized 4-Tab Right Column**:
-     - `📑 Pages & Layout`: Page tabs, carousel/manual modes, 5 golden grid templates, slot widget picker, and external plugin switches.
-     - `⏰ Time Schedule`: 24h schedule switch, active rule countdown status, refresh intervals, and dynamic rule editor.
-     - `🔌 Data Sources`: Detailed configuration for external ICS calendar & countdowns, live weather city, online todo manager, Home Assistant sensors, and lunar calendar.
-     - `⚙️ Device & Alerts`: Instant big-text emergency push, 180° screen rotation, Web Kiosk launcher, and API Token.
+2. **Web Studio Management Interface**
+   - **800×600 Real-Time Canvas Preview**: 1:1 pixel rendering feedback with an instant toggle between standard dashboard and full-screen big-text alert preview.
+   - **Layout & Slot Composition**: Built-in 5 golden grid templates (`2|1 left two, right one`, `1|2 left one, right two`, `2×2 four quadrants`, `1×2 dual columns`, `1×1 full screen`). Easily add pages and assign data sources to each slot.
+   - **Interactive Management**: Online todo list check-off and management, schedule rule editor, live weather city selection, and Home Assistant entity discovery.
 
-3. **Decoupled Built-in Core vs. External Plugin Architecture (`src/plugins/`)**
-   - **Built-in Core Data Sources**: Solar/Lunar calendar with Chinese Ganzhi and 24 Solar Terms (`calendar`), live weather with multi-day forecasts (`weather`), local todo management (`todo`), full-screen focus broadsheet (`focus`), and instant notification overlay (`alert`).
-   - **Dynamic External Plugins**: Loaded on-demand according to `plugins.<id>.enabled` in `config.json`:
-     - **P0 Plugin (`agenda`)**: Subscribes to remote `.ics` calendars (iCloud, Google Calendar, Feishu/Lark, DingTalk, Outlook, Nextcloud), calculates milestones and countdowns, and links event dots on the monthly calendar.
-     - **Environment Plugin (`sensors` · Home Assistant Deep Integration)**:
-       - **Explicit Instance Setup & Secret Isolation**: Easily configure HA Base URL and Long-Lived Access Token. Tokens are securely persisted in local `.env` with `0600` permissions (guarded by `.gitignore`, never committed to Git), with frontend masked display (`***`).
-       - **One-Click Connectivity Testing (`POST /api/ha/test`)**: Verifies connection and authentication against the HA API, echoing back the live HA Core version.
-       - **Online Entity Discovery (`GET /api/ha/entities`)**: Discovers and inspects all `sensor.*` entities across your smart home (prioritizing temperature and humidity) with real-time keyword filtering and one-click addition.
-       - **3-Column Mapping & Smooth Fallback**: Customize card display names, `entity_id`, and offline preview values, completely eliminating hardcoded defaults.
+3. **Modular Data Sources & External Plugins**
+   - **Built-in Sources**: Solar/Lunar calendar with Chinese Ganzhi and 24 Solar Terms (`calendar`), live weather with multi-day forecasts (`weather`), local todo management (`todo`), full-screen focus broadsheet (`focus`), and instant notification overlay (`alert`).
+   - **External Calendar Plugin (`agenda`)**: Subscribes to remote `.ics` calendars (iCloud, Google, Feishu, Nextcloud, etc.), extracts upcoming events and countdowns, and links event dots on the monthly calendar.
+   - **Home Assistant Environment Plugin (`sensors`)**: Configurable Base URL and Long-Lived Access Token, dynamic discovery of smart home temperature/humidity sensors, customizable value mapping, and offline preview fallbacks.
 
-4. **Multi-Page Layout Composition & Grid Reusability (`LayoutComposer`)**
-   - Built-in 5 golden grid layout templates: `2|1 (left two, right one)`, `1|2 (left one, right two)`, `2×2 (four quadrants)`, `1×2 (dual column)`, and `1×1 (full-screen broadside)`.
-   - Free multi-page expansion: Page 1, Page 2, Page 3... each page independently configures its grid template and widget slots.
-   - Dual playlist switching: **Automatic Carousel (`carousel`)** and **Manual Pagination (`manual`)**, with interval ranges from 30 seconds up to 24 hours.
-
-5. **Universal Pull Protocol & Long-Polling Synchronization (`/api/v1/*` + `/kiosk`)**
-   - `GET /api/v1/display`: Returns playlist manifest, per-page short MD5 hashes, rotation mode, schedule status, and instant alert status.
-   - `GET /api/v1/wait`: `asyncio.Event`-based HTTP long-polling suspension endpoint, delivering millisecond-level responsiveness for layout updates and urgent notifications.
-   - `GET /api/v1/assets/{bucket}/{filename}`: Distributes 16-level grayscale PNGs tailored for portrait hardware (`portrait`, 600×800) and landscape/web displays (`landscape`, 800×600).
-   - `GET/POST /api/v1/event`: Terminal key and touch event callbacks (toggle todo, clear completed, dismiss alert, refresh data).
-   - `GET /kiosk`: Zero-install full-screen Web Kiosk terminal with keyboard navigation, full-screen toggle, and interactive todo check-off.
-
-6. **Configurable Port & Multi-Service Coexistence (`OPENINK_PORT`)**
-   - Configurable listening port via the `OPENINK_PORT` environment variable (default: `8080`). Seamlessly coexists on the same Linux/Armbian host with existing services running on port 8000 (such as `esp32-gateway` or other relays).
+4. **Universal Pull Protocol & Web Kiosk**
+   - Standard HTTP endpoints distribute playlist manifests and 16-level grayscale PNGs. Supports `asyncio.Event`-based HTTP long-polling (`/api/v1/wait`) for millisecond-level reaction to layout changes and urgent alerts.
+   - Built-in Web Kiosk terminal (`/kiosk`) for tablets, PCs, or browsers with fullscreen display and keyboard navigation.
 
 ---
 
@@ -52,10 +33,10 @@
 
 ### 1. Prerequisites & Dependencies
 
-Supported OS: Linux / macOS, Python 3.10+, with `cairo` and `pango` system libraries installed.
+OpenInk requires Python 3.10+ and system `cairo` and `pango` graphics libraries:
 
 ```bash
-# Debian / Ubuntu / Armbian system libraries
+# Install Debian / Ubuntu / Armbian system libraries
 sudo apt update && sudo apt install -y python3-venv libcairo2 libpango-1.0-0 libpangocairo-1.0-0 gir1.2-pango-1.0 python3-gi-cairo fonts-wqy-microhei
 
 # Create virtual environment (using --system-site-packages inherits system Cairo/GI bindings)
@@ -67,14 +48,17 @@ pip install -r requirements.txt
 ### 2. Start Service
 
 ```bash
-# Local test run (listens on 0.0.0.0:8080 by default)
-OPENINK_BIND=0.0.0.0 OPENINK_PORT=8080 .venv/bin/python3 web_studio.py
+# Local test run (listens on 127.0.0.1:8080 by default)
+.venv/bin/python3 web_studio.py
+
+# LAN / Production run (configure API Token and bind to all interfaces)
+OPENINK_API_TOKEN='your-secure-token' OPENINK_BIND=0.0.0.0 OPENINK_PORT=8080 .venv/bin/python3 web_studio.py
 ```
 
-- **OpenInk Studio Management Dashboard**: `http://<SERVER_IP>:8080`
+- **Web Studio Management Dashboard**: `http://<SERVER_IP>:8080`
 - **Web Kiosk Fullscreen Terminal**: `http://<SERVER_IP>:8080/kiosk`
 
-### 3. Setup Systemd Service (Recommended for Production)
+### 3. Systemd Service Setup (Recommended)
 
 Create `/etc/systemd/system/openink.service`:
 
@@ -89,8 +73,8 @@ User=root
 WorkingDirectory=/opt/openink
 Environment=OPENINK_BIND=0.0.0.0
 Environment=OPENINK_PORT=8080
-Environment=OPENINK_API_TOKEN=
-ExecStart=/opt/openink/venv/bin/python3 /opt/openink/web_studio.py
+Environment=OPENINK_API_TOKEN=your-secure-token
+ExecStart=/opt/openink/.venv/bin/python3 /opt/openink/web_studio.py
 Restart=always
 RestartSec=5
 
@@ -106,119 +90,331 @@ sudo systemctl status openink
 
 ---
 
-## 📱 Device Integration & Hardware Compatibility
+## ⚙️ Configuration Guide
 
-### 1. Hanvon N516 (OpenInkpot · USB Network) One-Click Deployment
-For Hanvon N516 USB Network devices, a persistent, power-efficient client daemon is provided:
+OpenInk enforces strict **separation of code, template defaults, and runtime credentials**:
+- Sensitive credentials (e.g. API Token, HA Token) are loaded from environment variables or `.env`;
+- Application configuration is stored in `config.json` (ignored by `.gitignore`, initialized from `config.example.json`).
+
+### 1. Environment Variables (`.env`)
+
+Copy `.env.example` to `.env`:
 
 ```bash
-# Execute deployment script from the server (installs to N516 NAND Flash via SSH)
-./clients/n516-openinkpot/install_n516.sh n516
+cp .env.example .env
+chmod 600 .env
 ```
 
-- **BusyBox `init` Native Supervision**: Configured in `/etc/inittab` (`::respawn:/usr/local/bin/openink-agent.sh`) for millisecond-level daemon auto-healing upon any exit, USB reconnect, or cold system reboot.
-- **Dual Deadlock-Proof Timeouts**: Employs `busybox-full timeout` combined with `wget -T` to prevent embedded TCP socket hangs during long-polling requests.
-- **Reboot-Safe Key Injections**: On startup, the daemon dynamically creates 64-byte Linux `struct input_event` binary files in `/tmp/openink_keys/`, completely solving the reboot-loss issue on tmpfs.
-- **150ms Flicker-Free In-Place Refresh**: Bypasses `madeye` memory image caches using dual-buffering and `NEXT_IMAGE` steps, achieving in-place screen updates without restarting the GUI.
-- **Zero-CPU Offline Smart Sleep & Auto-Recovery**: Sleeps cleanly with 0% CPU usage when USB carrier drops and auto-recovers synchronization immediately when reconnected.
+Key environment variables:
 
-### 2. Amazon Kindle & Generic Wi-Fi E-Ink Devices
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `OPENINK_BIND` | `127.0.0.1` | Binding address. Use `0.0.0.0` for LAN deployments. |
+| `OPENINK_PORT` | `8080` | Service listening port. Customizable to avoid conflicts. |
+| `OPENINK_API_TOKEN` | Empty | Global API and management token. Recommended for non-loopback bindings. |
+| `OPENINK_STUDIO_TRUSTED_CIDRS` | Empty | Trusted LAN CIDRs (e.g. `192.168.1.0/24`) allowed to access Studio without a Token. |
+| `OPENINK_N516_NO_AUTH_IPS` | Empty | Device IPs exempted from token authentication (e.g. `192.168.111.1`). Applies only to `/api/v1/*`. |
+| `OPENINK_ALLOW_INSECURE_NO_AUTH` | `0` | Set to `1` to confirm running without token on a trusted private network. |
+| `HA_TOKEN` | Empty | Home Assistant Long-Lived Access Token (saved automatically when updated in Studio). |
+| `HA_CA_FILE` | Empty | Path to private CA certificate for self-signed Home Assistant instances. |
 
-> [!NOTE]
-> **Kindle Compatibility Note**: While this project was initially developed and tuned on Hanvon N516, OpenInk v1.2 is built on a **hardware-agnostic Universal Pull Protocol**. Even if you haven't yet verified it on a physical Kindle, as long as you maintain a lightweight client script on a jailbroken Kindle (or other Wi-Fi e-readers such as Android e-ink devices, ESP32 boards, or TRMNL), **it is fully compatible out of the box**!
+### 2. Core Dashboard Configuration (`config.json`)
 
-**Minimal Kindle Client Implementation**:
-1. **Wi-Fi Connectivity**: Keep Kindle connected to the local Wi-Fi network.
-2. **Scheduled Pull Script**: Use Kindle's built-in `curl` or `wget` (via cron or sleep loops):
-   ```sh
-   # 1. Fetch playlist manifest and extract image URL
-   JSON=$(curl -s "http://<SERVER_IP>:8080/api/v1/display?device_id=kindle")
-   IMG_URL=$(echo "$JSON" | grep -o 'http[^"]*landscape[^"]*' | head -n 1)
+On startup, OpenInk loads `config.json` (or falls back to `config.example.json`). Main configuration schema:
 
-   # 2. Download 16-level grayscale image and render to e-ink screen
-   curl -s "$IMG_URL" -o /tmp/screen.png
-   eips -g /tmp/screen.png
-   ```
-3. **Authentication**: If deployed over public networks, append `?token=your-secret-token` or provide header `X-API-Token`.
+```json
+{
+  "city": "Beijing",
+  "dashboard": {
+    "mode": "carousel",
+    "carousel_interval_sec": 60,
+    "template": "2_1",
+    "pages": [
+      {
+        "id": "page_1",
+        "title": "Page 1 · Main",
+        "template": "2_1",
+        "slots": {
+          "top_left": "calendar",
+          "bottom_left": "weather",
+          "right": "todo"
+        }
+      }
+    ]
+  },
+  "plugins": {
+    "agenda": {
+      "enabled": true,
+      "ics_urls": ["https://example.com/calendar.ics"],
+      "items": [
+        { "title": "Milestone", "date": "+3", "time": "10:00", "is_countdown": true }
+      ]
+    },
+    "sensors": {
+      "enabled": true
+    }
+  },
+  "homeassistant": {
+    "url": "http://192.168.1.100:8123",
+    "token_env": "HA_TOKEN",
+    "sensors": [
+      { "id": "sensor.living_room_temp", "name": "Living Room Temp" }
+    ]
+  },
+  "schedule": {
+    "enabled": true,
+    "active_interval_sec": 1800,
+    "rules": [
+      {
+        "id": "day_work",
+        "name": "Daytime Work",
+        "start": "08:00",
+        "end": "23:00",
+        "mode": "carousel",
+        "pages": ["page_1"],
+        "carousel_interval_sec": 60
+      },
+      {
+        "id": "night_dnd",
+        "name": "Night Sleep DND",
+        "start": "23:00",
+        "end": "08:00",
+        "mode": "sleep_dnd",
+        "pages": [],
+        "allow_alert_override": true
+      }
+    ]
+  }
+}
+```
 
 ---
 
-## 🔒 Reverse Proxy & API Token Authentication
+## 🧩 Plugin Architecture & Custom Plugin Development
 
-OpenInk defaults to **LAN Zero-Config Mode** (no password required when `OPENINK_API_TOKEN` is unset).
+OpenInk uses a **startup-time discovery** and **on-demand collection** plugin architecture:
+- **Zero background thread overhead**: Plugins are scanned and registered once when the service starts up;
+- **On-demand execution**: The `collect()` function is only invoked when `plugins.<plugin_id>.enabled == true` in `config.json`. Disabled plugins make zero network requests;
+- **Decoupled rendering**: Plugins can provide their own Cairo vector Widget. Once registered, the widget automatically appears in the Web Studio slot dropdown menu.
 
-When exposing the service to the internet or securing external webhooks, configure the token via environment variable:
+### 1. Plugin Directory Structure
 
-```bash
-export OPENINK_API_TOKEN="your-secure-token"
+Create a new directory in `src/plugins/` (for example, `src/plugins/stock_quote/`):
+
+```text
+src/plugins/stock_quote/
+├── manifest.json       # Metadata & supported slot declarations
+└── plugin.py           # Data collector & Cairo Widget renderer
 ```
 
-Three credential delivery methods are supported:
-1. **HTTP Header (Standard API)**: `X-API-Token: your-secure-token`
-2. **Bearer Header (Standard Webhook)**: `Authorization: Bearer your-secure-token`
-3. **URL Query (Embedded devices / Shortcuts)**: `?token=your-secure-token`
-   - When requests include `?token=...`, the server automatically appends the token parameter to image download URLs in the playlist.
+### 2. Plugin Metadata Specification (`manifest.json`)
+
+Declare plugin ID, UI labels, and which layout slot types it supports:
+- `quadrant`: Quarter card (~368×264 pixels)
+- `half_v`: Half-width vertical column (~368×537 pixels)
+- `full`: Fullscreen 744×537 canvas
+
+```json
+{
+  "id": "stock_quote",
+  "name": "📈 Stocks & Equities",
+  "short_name": "Stocks",
+  "description": "Periodically fetches stock quotes and displays trends on E-Ink cards",
+  "tier": "EXT",
+  "slot_options": {
+    "quadrant": {
+      "id": "stock_quote",
+      "name": "📈 Stocks (Plugin)",
+      "desc": "Displays top 3 watched stocks with price and daily change"
+    },
+    "half_v": {
+      "id": "stock_quote",
+      "name": "📈 Stock Watchlist (Plugin)",
+      "desc": "Full-height vertical card displaying full watchlist"
+    }
+  }
+}
+```
+
+### 3. Implementing Collector & Cairo Widget (`plugin.py`)
+
+Define the `collect` function and a widget class inheriting from `WidgetBase`:
+
+```python
+from typing import Dict, Any
+import cairo
+from profiles import DeviceProfile
+from widgets.base import (
+    WidgetBase, draw_pango_text, draw_dotted_kv_row,
+    INK_BLACK, CARD_PAD_X, CARD_PAD_Y
+)
+
+def collect(cfg: Dict[str, Any], force_refresh: bool = False) -> Dict[str, Any]:
+    """
+    Data collector: invoked periodically only when plugins.stock_quote.enabled is true.
+    Return value is mounted under global context['stock_quote'].
+    """
+    plugin_cfg = cfg.get("plugins", {}).get("stock_quote", {})
+    # Example: fetch external API
+    return {
+        "items": [
+            {"symbol": "AAPL", "price": "180.5", "change": "+1.2%"},
+            {"symbol": "MSFT", "price": "420.0", "change": "-0.5%"}
+        ]
+    }
+
+class StockWidget(WidgetBase):
+    id = "stock_quote"
+    name = "Stock Watchlist"
+    description = "Stock market quotes widget"
+
+    def render(
+        self,
+        cr: cairo.Context,
+        w: int,
+        h: int,
+        slot_type: str,
+        context: Dict[str, Any],
+        profile: DeviceProfile
+    ):
+        """
+        Renders crisp 16-level grayscale content with Cairo.
+        :param cr: Cairo Context
+        :param w, h: Pixel dimensions of the current slot (e.g. 368x264)
+        :param slot_type: 'quadrant' | 'half_v' | 'full'
+        :param context: Global context dictionary
+        :param profile: Hardware device profile
+        """
+        data = context.get("stock_quote", {})
+        stocks = data.get("items", [])
+
+        draw_pango_text(cr, "■ Stock Quotes", CARD_PAD_X, CARD_PAD_Y, 17, bold=True, color=INK_BLACK)
+        
+        start_y = CARD_PAD_Y + 45
+        for idx, item in enumerate(stocks[:3]):
+            cur_y = start_y + idx * 40
+            draw_dotted_kv_row(
+                cr, item["symbol"], f"{item['price']} ({item['change']})",
+                CARD_PAD_X, cur_y, w - CARD_PAD_X * 2,
+                row_h=30, label_size=15, val_size=16
+            )
+
+# Export for plugin discovery
+WIDGET_CLASS = StockWidget
+```
+
+> **Plugin Security Best Practices**:
+> 1. **URL Validation**: Use `from config import validate_external_url` to prevent SSRF vulnerabilities when querying remote services;
+> 2. **Secret Isolation**: Never store API tokens in plaintext inside `config.json`. Use environment variables and load them via `from config import get_secret`;
+> 3. **Service Reload**: After creating or updating a plugin, restart the service with `sudo systemctl restart openink`.
 
 ---
 
-## 📢 Instant Alert API
+## 🔒 API Authentication & External Application Integration
 
-OpenInk supports **sub-second interruptive high-priority alerts**. When external systems (mobile phones, Home Assistant automations, WeChat/Lark webhooks, system alerts, or iOS Shortcuts) trigger a notification, the server renders a dedicated 16-level grayscale alert broadsheet and immediately wakes up the e-ink terminal via HTTP long-polling.
+When `OPENINK_API_TOKEN` is configured, requests to administrative endpoints, data mutations, and alert broadcasts are authenticated.
 
-### 1. Standard JSON POST (`POST /api/alert/push`)
+### 1. Authentication Methods
+
+External applications can pass credentials through:
+1. **HTTP Headers (Recommended)**:
+   - `X-API-Token: <your-token>`
+   - `Authorization: Bearer <your-token>`
+2. **URL Query Parameter (For constrained environments or simple webhooks)**:
+   - `?token=<your-token>`
+
+> **Security Details**:
+> - External notification endpoints (`/api/alert/*`) strictly require token authentication.
+> - Image asset URLs served to clients **do not embed plaintext tokens**, preventing credential leakage during asset fetching.
+> - If `OPENINK_STUDIO_TRUSTED_CIDRS` is set, browser requests to Web Studio from matching IPs bypass manual token entry while remaining protected against cross-site requests.
+
+### 2. Instant Big-Text Alert API
+
+External systems (such as Home Assistant automations, iOS Shortcuts, monitoring webhooks, or shell scripts) can broadcast high-priority notifications to OpenInk. The server immediately renders a 16-level grayscale alert card and wakes up connected clients:
+
+#### Standard JSON Push (`POST /api/alert/push`)
 
 ```bash
 curl -X POST http://<SERVER_IP>:8080/api/alert/push \
   -H "Content-Type: application/json" \
   -H "X-API-Token: your-secure-token" \
   -d '{
-    "title": "Meeting Reminder",
-    "text": "Sprint review starts in 10 minutes in Room 3. Please bring your laptop.",
-    "sender": "Lark / Teams",
+    "title": "Server Alert",
+    "text": "Daily database backup completed successfully.",
+    "sender": "OpsMonitor",
     "duration": 15
   }'
 ```
 
-**Parameters**:
-- `title` *(string)*: Alert title (e.g., `"Doorbell"`, `"Meeting Reminder"`, `"Server Alert"`).
-- `text` *(string, required)*: Notification text, automatically formatted with adaptive font scaling and line wrapping.
-- `sender` *(string, optional)*: Sender pill badge, default `"OpenInk"`.
-- `duration` *(int, optional)*: Display duration in minutes (default 15). Automatically reverts to standard playlist rotation upon timeout.
+- `title` *(string)*: Alert title banner.
+- `text` *(string, required)*: Notification message body with automatic line wrapping.
+- `sender` *(string, optional)*: Origin identifier, defaults to `"OpenInk"`.
+- `duration` *(int, optional)*: Display duration in minutes (defaults to 15). Returns to dashboard carousel when expired.
 
-### 2. Single-Line Quick GET (`GET /api/alert/quick`)
+#### Quick GET Request (`GET /api/alert/quick`)
 
-Convenient for **mobile browser bookmarks**, **iOS Shortcuts**, **Tasker**, or **Home Assistant `rest_command`**:
+Ideal for browser bookmarks, iOS Shortcuts, or simple webhook triggers:
 
 ```bash
 curl -G "http://<SERVER_IP>:8080/api/alert/quick" \
-  --data-urlencode "title=Package Delivered" \
-  --data-urlencode "text=Your delivery has arrived at the front door." \
-  --data-urlencode "sender=Courier" \
-  --data-urlencode "duration=20" \
+  --data-urlencode "title=Doorbell" \
+  --data-urlencode "text=Motion detected at the front door" \
+  --data-urlencode "sender=Security" \
+  --data-urlencode "duration=10" \
   --data-urlencode "token=your-secure-token"
 ```
 
-### 3. Dismissing Alerts (`POST /api/alert/dismiss` or Physical Keys)
+#### Dismiss Alert (`POST /api/alert/dismiss`)
 
-- **HTTP Dismissal**:
-  ```bash
-  curl -X POST http://<SERVER_IP>:8080/api/alert/dismiss -H "X-API-Token: your-secure-token"
-  # Or via quick GET:
-  curl "http://<SERVER_IP>:8080/api/alert/dismiss?token=your-secure-token"
-  ```
-- **Physical Key Dismissal**: Press `Enter` / `Return` / `Space` on Hanvon N516 or Web Kiosk to immediately dismiss the alert and resume dashboard rotation.
+```bash
+curl -X POST http://<SERVER_IP>:8080/api/alert/dismiss \
+  -H "X-API-Token: your-secure-token"
+```
+
+Physical keystrokes (`Enter`, `Return`, or `Space`) on the Hanvon N516 or Web Kiosk also immediately dismiss the notification.
+
+### 3. Online Todos API (`/api/todos/*`)
+
+- `GET /api/todos`: Fetches the current todo list and completion counts.
+- `POST /api/todos/add`: Adds a new item (`{"text": "Replace air filter"}`).
+- `POST /api/todos/toggle`: Toggles item completion status (`{"id": 1}`).
+- `POST /api/todos/delete`: Deletes a specified item.
+- `POST /api/todos/clear`: Clears all completed items.
 
 ---
 
-## 🗺️ Roadmap
+## 📱 Device Integration & Hardware Compatibility
 
-- **v1.2 (Current Release)**:
-  - Architecture decoupling and elimination of hardware-specific hardcoded logic;
-  - Universal Pull Protocol and sub-second HTTP long polling;
-  - Port environment variable decoupling (`OPENINK_PORT`), coexisting with port 8000 services;
-  - Extended rotation intervals up to 24 hours with chunked heartbeats;
-  - Zero-install Web Kiosk terminal.
-- **v1.3 (Planned · Digital Photo Frame & Gray Gallery)**:
-  - **E-Ink Grayscale Album Pipeline**: JPEG/PNG upload, automatic center-crop, and 16-level grayscale quantization;
-  - **Dithering Engine**: Floyd-Steinberg and Atkinson error-diffusion dithering for high-fidelity photo rendering;
-  - **Mixed & Dedicated Frame Modes**: Dashboard + Photo mixed rotation, or standalone digital photo frame.
+### 1. Hanvon N516 (OpenInkpot · USB Network)
+
+For Hanvon N516 devices connected via point-to-point USB networking, a dedicated persistent client daemon is provided:
+
+```bash
+# Execute deployment script on the host (writes to N516 NAND Flash via SSH)
+./clients/n516-openinkpot/install_n516.sh n516
+```
+
+- **BusyBox `init` Native Supervision**: Managed via `/etc/inittab` (`::respawn:/usr/local/bin/openink-agent.sh`) for automatic restarts after exits or system reboots.
+- **150ms In-Place Refresh**: Employs double buffering and `NEXT_IMAGE` key injection to bypass madeye's image cache without window restarts.
+- **Zero-CPU Offline Smart Sleep**: Enters sleep mode when the USB carrier drops and auto-recovers synchronization immediately when reconnected.
+
+### 2. Amazon Kindle & Generic Wi-Fi E-Ink Devices
+
+OpenInk uses a universal pull protocol compatible with any device capable of fetching HTTP assets and displaying images (e.g. jailbroken Kindles, Android e-readers, ESP32 boards, TRMNL):
+
+```bash
+# 1. Fetch current display manifest and image URL
+JSON=$(curl -s "http://<SERVER_IP>:8080/api/v1/display?device_id=kindle")
+IMG_URL=$(echo "$JSON" | grep -o 'http[^"]*landscape[^"]*' | head -n 1)
+
+# 2. Download and render to e-ink screen
+curl -s "$IMG_URL" -o /tmp/screen.png
+# Display using the device tool (e.g. eips on Kindle)
+eips -g /tmp/screen.png
+```
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).

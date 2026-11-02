@@ -1,5 +1,5 @@
 """
-Home Assistant Integration Module (v1.2).
+Home Assistant Integration Module (v1.4).
 Fetches indoor environment sensor metrics (temperature, humidity) from Home Assistant REST API.
 """
 
@@ -25,7 +25,7 @@ class HomeAssistantClient:
         self.headers = {
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
-            "User-Agent": "OpenInk-N516/1.2"
+            "User-Agent": "OpenInk-N516/1.4"
         }
 
     def _api_get(self, endpoint: str) -> Optional[Any]:

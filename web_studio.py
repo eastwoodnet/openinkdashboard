@@ -52,7 +52,7 @@ from plugins import PLUGIN_CATALOG, get_enabled_plugin_ids, load_enabled_plugins
 from alert_state import alert_state
 from scheduler import evaluate_schedule, filter_pages_for_rule, normalize_schedule_config
 
-app = FastAPI(title="OpenInk Studio")
+app = FastAPI(title="OpenInk Studio", version="1.4")
 
 API_TOKEN = os.environ.get("OPENINK_API_TOKEN", "")
 BIND_HOST = os.environ.get("OPENINK_BIND", "127.0.0.1")

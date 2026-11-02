@@ -1,5 +1,5 @@
 """
-OpenInk Startup-Time External Plugin Manager (v1.2).
+OpenInk Startup-Time External Plugin Manager (v1.4).
 
 Architectural Design:
 - Zero Runtime Polling Overhead: Plugins are discovered ONCE at service startup (`discover_plugins()`).

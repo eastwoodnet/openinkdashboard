@@ -54,7 +54,7 @@ def _request_pinned_once(safe_url: str, addresses: List[str], timeout: float):
             target = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
             conn.putrequest("GET", target, skip_host=True, skip_accept_encoding=True)
             conn.putheader("Host", parsed.netloc)
-            conn.putheader("User-Agent", "OpenInk-CalendarSync/1.2")
+            conn.putheader("User-Agent", "OpenInk-CalendarSync/1.4")
             conn.putheader("Accept", "text/calendar, text/plain, application/octet-stream")
             conn.endheaders()
             resp = conn.getresponse()

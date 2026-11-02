@@ -1,61 +1,42 @@
-# OpenInk · 通用墨水屏看板与插件编排系统
+# OpenInk (v1.4) · 通用墨水屏看板与服务端系统
 
 [English](README_EN.md) | [简体中文](README.md)
 
-**OpenInk (v1.3)** 是一套面向电子墨水屏（E-Ink）终端的高性能自建看板服务（BYOS）与可视化排版系统。基于 **Python Cairo/Pango 几何矢量渲染引擎** 与 **模块化外部插件架构**，提供全时段排程休眠、多页版式自由编排、秒级通用 HTTP 长轮询增量同步、双模自动轮播与终端交互响应。
+**OpenInk (v1.4)** 是面向电子墨水屏（E-Ink）终端的自建看板服务（BYOS）与排版系统。采用 Python Cairo/Pango 矢量渲染，支持多页版式自由编排、分时段排程与夜间休眠（DND）、HTTP 长轮询增量同步、双模自动轮播，以及通过 API 接收外部系统的即时大字通知。
 
 ---
 
-## 🌟 核心特性 (v1.3)
+## 🌟 核心功能
 
-1. **24 小时全时段分页面排程与休眠免打扰 (`src/scheduler.py`)**
-   - **全天分时段自定义**：支持按时间段（如早晨焦点、日间工作、傍晚生活、夜间休眠）独立指定生效页面与轮播节奏，支持跨午夜时间段定义。
-   - **墨水屏寿命保护型休眠 (DND)**：休眠期间屏幕保持静止不翻页，后台在 00:00 静默更新日历与数据；早晨唤醒时一次性刷新推送到屏幕，最大化减少墨水屏微胶囊磨损与电力损耗。
-   - **时段保鲜调度**：非休眠时段定时检查数据更新，内容有变化时才下发硬件刷新，杜绝无意义的频闪。
+1. **分时段排程与夜间休眠保护 (DND)**
+   - 支持全天分时段规则（如晨间、日间工作、晚间、夜间休眠），每时段可独立指定展示页面与轮播间隔，支持跨午夜时间段。
+   - 夜间休眠时段屏幕保持静止，零点后台静默更新日历与数据；早晨唤醒时一次性刷新，减少墨水屏微胶囊磨损与功耗。
+   - 非休眠时段定时检查数据更新，仅当渲染哈希发生变化时才触发终端刷新，避免无效闪烁。
 
-2. **现代化左右分栏 Web Studio 工作台 (`templates/studio.html`)**
-   - **左侧 800×600 实时置顶预览**：等比像素级画布反馈，右上角可一键在「常规看板预览」与「大字通知效果预览」间无缝切换。
-   - **右侧 4 大功能分类选项卡**（告别长瀑布流）：
-     - `📑 页面编排`：多页管理、轮播/手动翻页、5 种黄金分栏结构、卡片槽位数据源绑定与插件开关。
-     - `⏰ 时段排程`：排程总开关、当前排期执行倒计时、保鲜周期、时段规则可视化增删改。
-     - `🔌 数据源`：外部日历 (ICS) 与倒数日、实时天气、待办清单、Home Assistant 环境传感器、农历日历。
-     - `⚙️ 设备通知`：全屏即时大字通知推送与预览、180° 一键翻转、Web Kiosk、API Token。
+2. **Web Studio 可视化管理面板**
+   - **800×600 实时画布预览**：等比像素级渲染反馈，支持在常规看板与大字通知效果之间一键切换预览。
+   - **分栏与槽位编排**：内置 5 种版式（`2|1 左二右一`、`1|2 左一右二`、`2×2 四象限`、`1×2 左右双栏`、`1×1 全屏单卡`），支持自由扩展页面并为每个槽位选择数据源。
+   - **在线管理配置**：集成待办事项在线勾选与编辑、时段排程规则配置、天气城市切换、Home Assistant 实体在线检索。
 
-3. **核心数据源与外部插件解耦架构 (`src/plugins/`)**
-   - **内置核心数据源**：公历/农历干支节气日历 (`calendar`)、实时天气与未来趋势 (`weather`)、待办清单管理 (`todo`)、综合焦点画报 (`focus`)、即时大字通知 (`alert`)。
-   - **外部数据源插件**：根据 `config.json` 中 `plugins.<id>.enabled` 动态按需加载：
-     - **0 级插件 (`agenda`)**：订阅 iCloud / Google / 飞书等 `.ics` 外部日历，支持日程重要度高亮、纪念日/倒数日计算，并自动联动月历打点。
-     - **环境插件 (`sensors` · Home Assistant 深度集成)**：
-       - **显式实例配置与安全凭据隔离**：支持自定义 Base URL 与长期访问令牌 (Token)，凭据通过 `0600` 权限安全存入 `.env`（严格受 `.gitignore` 保护，绝不入库泄露），前端回显自动掩码（`***`）。
-       - **一键连通性测试 (`POST /api/ha/test`)**：即时验证 HA 实例连通性并回显 HA Core 运行版本号。
-       - **在线实体自动发现 (`GET /api/ha/entities`)**：在线枚举 HA 实例所有 `sensor.*` 实体（智能优先温湿度），支持关键词实时过滤与一键勾选添加。
-       - **三列映射与优雅回退**：灵活定义卡片显示名称、`entity_id` 与离线回退显示值，彻底告别写死数据，网络异常时平滑降级。
+3. **模块化数据源与插件支持**
+   - **内置数据源**：公历/农历干支节气日历 (`calendar`)、实时天气与未来趋势 (`weather`)、本地待办清单 (`todo`)、综合焦点画报 (`focus`)、即时大字通知 (`alert`)。
+   - **外部日历插件 (`agenda`)**：订阅 iCloud、Google、飞书等 `.ics` 远程日历，自动解析日程与倒数日，并在月历视图中联动打点。
+   - **Home Assistant 环境监控插件 (`sensors`)**：支持配置实例地址与长期访问令牌，自动检索温湿度等传感器实体，提供数值映射与离线回退。
 
-4. **多页动态编排与版式复用 (`LayoutComposer`)**
-   - 内置 5 套黄金网格分栏：`2|1 左二右一`、`1|2 左一右二`、`2×2 四象限`、`1×2 左右双栏`、`1×1 全屏单卡`。
-   - 支持自由扩展第 1 页、第 2 页、第 3 页……每页均可独立选择网格分栏与数据源插槽。
-   - 支持 **自动轮播 (`carousel`)** 与 **手动翻页 (`manual`)**，轮播间隔涵盖 30秒 至 24小时。
-
-5. **通用拉取协议与长轮询实时同步 (`/api/v1/*` + `/kiosk`)**
-   - `GET /api/v1/display`：返回当前播放列表清单、各页 MD5 短哈希、轮播模式、排程时段与紧急通知状态。
-   - `GET /api/v1/wait`：基于 `asyncio.Event` 的 HTTP 长轮询挂起接口，毫秒级响应配置变更与即时通知。
-   - `GET /api/v1/assets/{bucket}/{filename}`：分发适合竖屏硬件 (`portrait`, 600×800) 与横屏/网页 (`landscape`, 800×600) 的 16 级灰阶图像。
-   - `GET/POST /api/v1/event`：终端物理按键/触控回调（勾选待办、清理完成项、解除通知或刷新数据）。
-   - `GET /kiosk`：零安装全屏 Web Kiosk 终端，支持键盘翻页、全屏模式与待办快捷勾选。
-
-6. **灵活端口配置与多服务并存 (`OPENINK_PORT`)**
-   - 原生支持通过环境变量 `OPENINK_PORT` 指定运行端口（默认推荐 `8080`），可与主机上已运行的其他 8000 端口服务（如 `esp32-gateway`、其他 Web 中继）在同一台 Linux/Armbian 主机上零冲突共存。
+4. **通用拉取协议与 Web Kiosk**
+   - 基于标准 HTTP 接口下发展示清单与 16 级灰阶图像，支持基于 `asyncio.Event` 的 HTTP 长轮询（`/api/v1/wait`），页面变更或新通知毫秒级下发。
+   - 内置 Web Kiosk 终端（`/kiosk`），可在平板、电脑或移动设备浏览器中全屏运行并支持快捷键翻页与交互。
 
 ---
 
 ## 🚀 部署指南
 
-### 1. 环境准备与依赖安装
+### 1. 系统依赖与虚拟环境
 
-系统要求：Linux / macOS，Python 3.10+，并具备 `cairo`、`pango` 底层图形库。
+OpenInk 需要 Python 3.10+ 以及系统底层的 `cairo` 和 `pango` 图形库：
 
 ```bash
-# Debian / Ubuntu / Armbian 环境依赖
+# Debian / Ubuntu / Armbian 安装底层依赖
 sudo apt update && sudo apt install -y python3-venv libcairo2 libpango-1.0-0 libpangocairo-1.0-0 gir1.2-pango-1.0 python3-gi-cairo fonts-wqy-microhei
 
 # 创建虚拟环境（推荐使用 --system-site-packages 继承系统 Cairo/GI 绑定）
@@ -64,20 +45,20 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. 启动服务端
+### 2. 启动服务
 
 ```bash
 # 本地测试启动（默认仅监听 127.0.0.1:8080）
 .venv/bin/python3 web_studio.py
 
-# 局域网终端部署：必须显式设置强 Token；生产环境同时配置 HTTPS 反向代理
-OPENINK_API_TOKEN='请替换为高强度随机值' OPENINK_BIND=0.0.0.0 .venv/bin/python3 web_studio.py
+# 局域网/生产环境启动（设置 API Token 并监听全部网卡）
+OPENINK_API_TOKEN='your-secure-token' OPENINK_BIND=0.0.0.0 OPENINK_PORT=8080 .venv/bin/python3 web_studio.py
 ```
 
-- **OpenInk Studio 管理面板**：`http://<主机IP>:8080`
+- **Web Studio 管理面板**：`http://<主机IP>:8080`
 - **Web Kiosk 全屏终端**：`http://<主机IP>:8080/kiosk`
 
-### 3. 配置 Systemd 常驻服务 (生产环境推荐)
+### 3. Systemd 常驻服务配置 (推荐)
 
 创建 `/etc/systemd/system/openink.service`：
 
@@ -92,8 +73,8 @@ User=root
 WorkingDirectory=/opt/openink
 Environment=OPENINK_BIND=0.0.0.0
 Environment=OPENINK_PORT=8080
-Environment=OPENINK_API_TOKEN=请替换为高强度随机值
-ExecStart=/opt/openink/venv/bin/python3 /opt/openink/web_studio.py
+Environment=OPENINK_API_TOKEN=your-secure-token
+ExecStart=/opt/openink/.venv/bin/python3 /opt/openink/web_studio.py
 Restart=always
 RestartSec=5
 
@@ -109,141 +90,336 @@ sudo systemctl status openink
 
 ---
 
-## 📱 终端接入与硬件适配说明
+## ⚙️ 配置文件说明
 
-### 1. 汉王 N516 (OpenInkpot · USB Network) 终端一键部署
-针对 N516 USB Network 终端，项目提供了 100% 重启持久化与断网休眠省电的守护进程：
+OpenInk 严格执行**代码、配置模板与敏感凭据分离**的原则：
+- 敏感凭据（如 API Token、HA 密钥）通过环境变量或本地 `.env` 文件读取；
+- 业务配置保存在 `config.json`（已被 `.gitignore` 忽略，仓库仅提供 `config.example.json` 作为模板）。
+
+### 1. 环境变量配置 (`.env`)
+
+复制模板文件 `.env.example` 为 `.env`：
 
 ```bash
-# 在服务端执行一键部署脚本（通过 SSH 写入 N516 NAND Flash）
-./clients/n516-openinkpot/install_n516.sh n516
+cp .env.example .env
+chmod 600 .env
 ```
 
-N516 位于隔离 USB 点对点网段时，可在服务端 `.env` 设置以下来源 IP 豁免，N516 不需要 Token：
+核心配置项说明：
 
-```sh
-OPENINK_N516_NO_AUTH_IPS=192.168.111.1
+| 环境变量名 | 默认值 | 说明 |
+| :--- | :--- | :--- |
+| `OPENINK_BIND` | `127.0.0.1` | 监听地址。局域网部署可设为 `0.0.0.0`。 |
+| `OPENINK_PORT` | `8080` | 服务运行端口。可自定义以避免与其他服务冲突。 |
+| `OPENINK_API_TOKEN` | 空 | 全局访问与管理密钥。非回环监听时推荐配置。 |
+| `OPENINK_STUDIO_TRUSTED_CIDRS` | 空 | 可信局域网网段（如 `192.168.1.0/24`）。该网段内访问 Studio 面板可免验 Token。 |
+| `OPENINK_N516_NO_AUTH_IPS` | 空 | 豁免 Token 的设备 IP（如 USB 点对点地址 `192.168.111.1`）。仅对 `/api/v1/*` 终端接口生效。 |
+| `OPENINK_ALLOW_INSECURE_NO_AUTH` | `0` | 在未配置 Token 且监听非回环地址时，置 `1` 显式确认运行在受信任私网中。 |
+| `HA_TOKEN` | 空 | Home Assistant 长期访问令牌（系统通过 Web Studio 保存时会自动存入此文件）。 |
+| `HA_CA_FILE` | 空 | 自签名 Home Assistant 实例的私有 CA 证书路径。 |
+
+### 2. 看板核心配置 (`config.json`)
+
+系统启动时会自动读取 `config.json`，若文件不存在则以 `config.example.json` 作为初始默认值。各主要配置块结构如下：
+
+```json
+{
+  "city": "Beijing",
+  "dashboard": {
+    "mode": "carousel",
+    "carousel_interval_sec": 60,
+    "template": "2_1",
+    "pages": [
+      {
+        "id": "page_1",
+        "title": "第 1 页 · 主看板",
+        "template": "2_1",
+        "slots": {
+          "top_left": "calendar",
+          "bottom_left": "weather",
+          "right": "todo"
+        }
+      }
+    ]
+  },
+  "plugins": {
+    "agenda": {
+      "enabled": true,
+      "ics_urls": ["https://example.com/calendar.ics"],
+      "items": [
+        { "title": "项目里程碑", "date": "+3", "time": "10:00", "is_countdown": true }
+      ]
+    },
+    "sensors": {
+      "enabled": true
+    }
+  },
+  "homeassistant": {
+    "url": "http://192.168.1.100:8123",
+    "token_env": "HA_TOKEN",
+    "sensors": [
+      { "id": "sensor.living_room_temp", "name": "客厅温度" }
+    ]
+  },
+  "schedule": {
+    "enabled": true,
+    "active_interval_sec": 1800,
+    "rules": [
+      {
+        "id": "day_work",
+        "name": "日间工作",
+        "start": "08:00",
+        "end": "23:00",
+        "mode": "carousel",
+        "pages": ["page_1"],
+        "carousel_interval_sec": 60
+      },
+      {
+        "id": "night_dnd",
+        "name": "夜间休眠",
+        "start": "23:00",
+        "end": "08:00",
+        "mode": "sleep_dnd",
+        "pages": [],
+        "allow_alert_override": true
+      }
+    ]
+  }
+}
 ```
-
-其他部署方式可在 N516 的 `/etc/openink-agent.conf` 中单独配置 `OPENINK_API_TOKEN`。豁免只作用于 `/api/v1/*` 设备接口，不适用于 Studio 管理接口。
-
-- **BusyBox `init` 原生级常驻守护**：写入 `/etc/inittab` (`::respawn:/usr/local/bin/openink-agent.sh`)，无论断网重连、异常退出还是设备冷重启，均由系统 1 号进程自动毫秒级拉起，无需任何后台 nohup。
-- **双重防死锁超时保护**：集成 `busybox-full timeout` 与 `wget -T` 双层网络超时，彻底杜绝嵌入式精简 TCP 栈在长轮询中断开导致的进程死锁挂起。
-- **持久化按键生成**：守护进程启动时自动在 `/tmp/openink_keys/` 动态构建 64 字节 Linux `struct input_event` 二进制流，彻底解决 `/tmp` 重启丢失按键的问题。
-- **150ms 无闪原地刷新**：利用双缓冲机制与 `NEXT_IMAGE` 步进，绕过 madeye 内存文件缓存，无需重启窗口即可原地刷新。
-- **断网 0% CPU 智能休眠自愈**：当 USB 断开时以 0% CPU 智能休眠等待重连，插上 USB 即刻自愈恢复同步，无需手动干预。
-
-### 2. 亚马逊 Kindle 与通用 Wi-Fi 墨水屏终端说明
-
-> [!NOTE]
-> **Kindle 通用性说明**：本项目初期主要基于汉王 N516 进行实机联调，作者暂未直接使用 Kindle 机器进行深度验证。但从架构设计上，OpenInk 采用了**设备无关的通用 HTTP 拉取协议（Universal Pull Protocol）**。只要在已越狱的 Kindle 或其他 Wi-Fi 墨水屏（如 Android 电纸书、ESP32 墨水屏板、TRMNL）上维护一个极简的定时拉取脚本，并填入服务端的 IP 与端口，**大概率即可完全通用**！
-
-**Kindle 端极简运行思路**：
-1. **网络连接**：Kindle 自带 Wi-Fi 网卡，保持接入局域网。
-2. **定时拉取脚本**：使用 Kindle 内置的 `curl` 或 `wget` 定时/休眠唤醒请求：
-   ```sh
-   # 1. 获取播放清单 JSON，提取图片 URL
-   JSON=$(curl -s "http://<服务器IP>:8080/api/v1/display?device_id=kindle")
-   IMG_URL=$(echo "$JSON" | grep -o 'http[^"]*landscape[^"]*' | head -n 1)
-
-   # 2. 下载 16 级灰阶画面并刷屏展示
-   curl -s "$IMG_URL" -o /tmp/screen.png
-   eips -g /tmp/screen.png
-   ```
-3. **安全鉴权**：若服务部署在外网，只需在请求时追加 `?token=your-secret-token` 或请求头 `X-API-Token`。
 
 ---
 
-## 🔒 外网反向代理与 API Token 鉴权
+## 🧩 插件机制与自定义插件编写规范
 
-OpenInk 默认仅监听 `127.0.0.1`。局域网绑定非回环地址且不使用 Token 时，需要显式设置 `OPENINK_ALLOW_INSECURE_NO_AUTH=1`；公网部署应使用 HAProxy/Nginx 提供 HTTPS。
+OpenInk 采用**启动时自动发现（Startup-Time Discovery）**与**按需采集（On-Demand Collection）**的插件化架构：
+- **零后台巡检常驻开销**：插件在服务启动时自动扫描注册，无需后台常驻线程；
+- **开关隔离**：仅当 `config.json` 中 `plugins.<plugin_id>.enabled == true` 时，系统才会在刷新时执行数据采集，未启用时完全不发起网络请求；
+- **渲染解耦**：插件可自带 Cairo 矢量渲染卡片（Widget），注册后自动出现在 Web Studio 相应槽位的下拉选择列表中。
 
-个人部署按通信角色配置：
+### 1. 插件目录结构
 
-```sh
-# 手机、第三方应用和非可信网络 API 使用
-OPENINK_API_TOKEN=请替换为高强度随机值
-# 可信 LAN 中的 Studio 管理接口免 Token
-OPENINK_STUDIO_TRUSTED_CIDRS=192.168.1.0/24
-# 仅 N516 USB 来源地址免 Token
-OPENINK_N516_NO_AUTH_IPS=192.168.111.1
+在 `src/plugins/` 目录下创建新插件文件夹（例如 `src/plugins/stock_quote/`），包含两个文件：
+
+```text
+src/plugins/stock_quote/
+├── manifest.json       # 插件元数据与支持的卡片槽位声明
+└── plugin.py           # 数据采集器与 Cairo Widget 渲染类
 ```
 
-- 外部通知使用 `/api/alert/*`，始终按 Token 配置鉴权。
-- Studio 的 Alert 操作使用 `/api/studio/alert/*`，遵循可信 LAN 规则。
-- 可信 LAN 只作用于 Studio 管理接口，不会放行外部通知接口。
-- 只使用直连来源 IP，不信任 `X-Forwarded-For`；HAProxy 后的外部请求仍需 Token。
-- 推荐通过 `X-API-Token` 或 `Authorization: Bearer` 传递凭据，避免 URL Query 泄漏。
+### 2. 插件元数据规范 (`manifest.json`)
 
-局域网终端或外部 Webhook 可通过环境变量设置 Token：
+声明插件唯一 ID、界面显示名称，以及该插件适用的卡片槽位类型：
+- `quadrant`: 四象限小卡片（约 368×264 像素）
+- `half_v`: 纵向全高半宽卡片（约 368×537 像素）
+- `full`: 744×537 全屏单卡
 
-```bash
-export OPENINK_API_TOKEN="your-secure-token"
+```json
+{
+  "id": "stock_quote",
+  "name": "📈 自选股票与行情",
+  "short_name": "自选股",
+  "description": "定时拉取自选股票行情并在墨水屏卡片中展示",
+  "tier": "EXT",
+  "slot_options": {
+    "quadrant": {
+      "id": "stock_quote",
+      "name": "📈 自选股卡片 (Plugin)",
+      "desc": "展示前 3 项重点自选股票现价与涨跌幅"
+    },
+    "half_v": {
+      "id": "stock_quote",
+      "name": "📈 自选股全高列表 (Plugin)",
+      "desc": "全高纵向展示自选股票列表与走势"
+    }
+  }
+}
 ```
 
-外部客户端使用 `X-API-Token: your-secure-token` 或 `Authorization: Bearer your-secure-token`。服务端不会把 Token 写入下发的图片 URL。
+### 3. 数据采集与渲染实现 (`plugin.py`)
+
+`plugin.py` 中需定义 `collect` 函数以及继承 `WidgetBase` 的渲染类：
+
+```python
+from typing import Dict, Any
+import cairo
+from profiles import DeviceProfile
+from widgets.base import (
+    WidgetBase, draw_pango_text, draw_pango_text_right,
+    draw_rounded_rect, draw_dotted_kv_row, INK_BLACK, INK_DIVIDER,
+    CARD_PAD_X, CARD_PAD_Y
+)
+from config import validate_external_url, get_secret
+
+def collect(cfg: Dict[str, Any], force_refresh: bool = False) -> Dict[str, Any]:
+    """
+    数据采集器：当且仅当 plugins.stock_quote.enabled 为 true 时被定时调用。
+    返回值会自动挂载至全局 context['stock_quote'] 中。
+    """
+    plugin_cfg = cfg.get("plugins", {}).get("stock_quote", {})
+    # 示例：通过安全网络校验函数请求外部 API 或本地服务
+    return {
+        "items": [
+            {"symbol": "AAPL", "price": "180.5", "change": "+1.2%"},
+            {"symbol": "MSFT", "price": "420.0", "change": "-0.5%"}
+        ]
+    }
+
+class StockWidget(WidgetBase):
+    id = "stock_quote"
+    name = "自选股票看板"
+    description = "自选股票行情卡片"
+
+    def render(
+        self,
+        cr: cairo.Context,
+        w: int,
+        h: int,
+        slot_type: str,
+        context: Dict[str, Any],
+        profile: DeviceProfile
+    ):
+        """
+        基于 Cairo 矢量绘图上下文渲染内容（保证 16 级灰阶墨水屏清晰高对比度）。
+        :param cr: Cairo Context
+        :param w, h: 当前槽位的像素宽高 (如 368x264)
+        :param slot_type: 'quadrant' | 'half_v' | 'full'
+        :param context: 包含内置数据与所有已启用插件数据的全局上下文字典
+        :param profile: 硬件设备配置（包含颜色支持、长宽等）
+        """
+        data = context.get("stock_quote", {})
+        stocks = data.get("items", [])
+
+        # 标题栏绘制
+        draw_pango_text(cr, "■ 自选股行情", CARD_PAD_X, CARD_PAD_Y, 17, bold=True, color=INK_BLACK)
+        
+        # 虚线键值对行
+        start_y = CARD_PAD_Y + 45
+        for idx, item in enumerate(stocks[:3]):
+            cur_y = start_y + idx * 40
+            draw_dotted_kv_row(
+                cr, item["symbol"], f"{item['price']} ({item['change']})",
+                CARD_PAD_X, cur_y, w - CARD_PAD_X * 2,
+                row_h=30, label_size=15, val_size=16
+            )
+
+# 导出供插件系统识别
+WIDGET_CLASS = StockWidget
+```
+
+> **插件开发安全最佳实践**：
+> 1. **URL 安全白名单**：发起外部 HTTP 请求前，建议调用 `from config import validate_external_url` 或 `resolve_external_url`，防止针对内网私网地址的 SSRF 漏洞；
+> 2. **凭据安全隔离**：插件如需调用带 Token 的第三方服务，严禁在 `config.json` 中存盘明文密码，应通过 `from config import get_secret` 从环境变量或 `.env` 注入；
+> 3. **重启生效**：新增或修改插件代码后，执行 `sudo systemctl restart openink` 重载服务即可。
 
 ---
 
-## 📢 即时大字通知推送 (Instant Alert API)
+## 🔒 API 鉴权与外部应用通信机制
 
-OpenInk 支持**毫秒级插播即时大字通知**。当外部系统（如人在室外时手机触发、Home Assistant 自动化、企业微信/飞书 Webhook、监控告警脚本或 iOS 快捷指令）发送通知请求时，服务端会立即生成专用的 16 级灰阶大字画报（居中大字标题、自适应正文字号、来源徽标与有效倒计时），并通过 HTTP 长轮询挂起点毫秒级唤醒墨水屏终端打断轮播，立即呈现通知。
+当服务端配置了 `OPENINK_API_TOKEN` 时，所有针对管理接口、数据更新以及即时通知的请求均会触发鉴权。
 
-### 1. 标准 JSON 格式推送 (`POST /api/alert/push`)
+### 1. 通信鉴权方式
+
+外部应用可通过以下任一方式传递凭据：
+1. **HTTP 请求头 (推荐)**：
+   - `X-API-Token: <your-token>`
+   - `Authorization: Bearer <your-token>`
+2. **URL Query 参数 (适用于受限环境或简易 Webhook)**：
+   - `?token=<your-token>`
+
+> **安全机制**：
+> - 外部通知接口（`/api/alert/*`）始终强制校验 Token。
+> - 服务端在向终端下发的图像资产 URL 中**不会拼接明文 Token**，防止图像下载请求泄露认证凭据。
+> - 若配置了 `OPENINK_STUDIO_TRUSTED_CIDRS`，仅限该网段的局域网浏览器访问 Web Studio 时豁免输入 Token，并受到来源检查（Same-Origin）防护。
+
+### 2. 即时大字通知推送 (Instant Alert API)
+
+外部应用（如 Home Assistant 自动化、iOS 快捷指令、监控报警脚本、企业微信 Webhook 等）可向 OpenInk 发送即时插播通知。服务端会立即生成 16 级灰阶大字画报并毫秒级唤醒终端呈现。
+
+#### 标准 JSON 推送 (`POST /api/alert/push`)
 
 ```bash
 curl -X POST http://<主机IP>:8080/api/alert/push \
   -H "Content-Type: application/json" \
   -H "X-API-Token: your-secure-token" \
   -d '{
-    "title": "会议提醒",
-    "text": "10分钟后在第3会议室召开敏捷评审会，请携带笔记本。",
-    "sender": "企业微信",
+    "title": "运维告警",
+    "text": "核心备份任务完成，存储池健康度正常。",
+    "sender": "监控中心",
     "duration": 15
   }'
 ```
 
-**请求字段说明**：
-- `title` *(string)*: 通知大标题（例如 `"桌面备忘"`、`"门铃提醒"`、`"运维告警"`）。
-- `text` *(string, 必选)*: 通知正文内容，自动计算字号与优雅折行排版。
-- `sender` *(string, 可选)*: 来源徽标，默认 `"OpenInk"`。
-- `duration` *(int, 可选)*: 保持时长（分钟），默认 15 分钟。超时后设备自动恢复原看板轮播。
+- `title` *(string)*: 通知大标题。
+- `text` *(string, 必选)*: 通知正文内容，自动计算字号与优雅折行。
+- `sender` *(string, 可选)*: 发送方标识，默认 `"OpenInk"`。
+- `duration` *(int, 可选)*: 展示时长（分钟），默认 15 分钟。超时后自动恢复原看板轮播。
 
-### 2. 单行快捷 GET 请求 (`GET /api/alert/quick`)
+#### 快捷 GET 请求 (`GET /api/alert/quick`)
 
-适合在**手机浏览器书签**、**iOS 快捷指令（捷径）**、**Tasker** 或 **Home Assistant `rest_command`** 中直接调用：
+适合在浏览器书签、iOS 捷径或轻量 Webhook 中调用：
 
 ```bash
-# 推荐使用 --data-urlencode（自动处理中文字符转义）
 curl -G "http://<主机IP>:8080/api/alert/quick" \
-  --data-urlencode "title=快递到达" \
-  --data-urlencode "text=您的顺丰快递已投递至蜂巢快递柜" \
-  --data-urlencode "sender=菜鸟驿站" \
-  --data-urlencode "duration=20" \
+  --data-urlencode "title=门铃提醒" \
+  --data-urlencode "text=门口检测到访客按门铃" \
+  --data-urlencode "sender=门禁系统" \
+  --data-urlencode "duration=10" \
   --data-urlencode "token=your-secure-token"
 ```
 
-### 3. 手动解除即时通知 (`POST /api/alert/dismiss` 或 物理按键)
+#### 解除通知 (`POST /api/alert/dismiss`)
 
-- **HTTP 接口解除**：
-  ```bash
-  curl -X POST http://<主机IP>:8080/api/alert/dismiss -H "X-API-Token: your-secure-token"
-  # 或快捷 GET 请求:
-  curl "http://<主机IP>:8080/api/alert/dismiss?token=your-secure-token"
-  ```
-- **终端物理交互解除**：在汉王 N516 或 Web Kiosk 终端上按下 `Enter` / `Return` / `空格键`，即可立即关闭当前通知并恢复主看板轮播。
+```bash
+curl -X POST http://<主机IP>:8080/api/alert/dismiss \
+  -H "X-API-Token: your-secure-token"
+```
+
+在汉王 N516 或 Web Kiosk 终端上按下 `Enter` / `Return` / `空格键` 也可直接物理关闭当前通知。
+
+### 3. 在线待办事项 API (`/api/todos/*`)
+
+- `GET /api/todos`：获取当前待办列表与统计数据。
+- `POST /api/todos/add`：添加待办（`{"text": "购买滤芯"}`）。
+- `POST /api/todos/toggle`：切换指定待办的完成状态（`{"id": 1}`）。
+- `POST /api/todos/delete`：删除指定序号待办。
+- `POST /api/todos/clear`：一键清除所有已完成待办。
 
 ---
 
-## 🗺️ 后续版本路线图
+## 📱 终端设备接入与硬件适配
 
-- **v1.2 (当前版本)**：
-  - 架构全面解耦，去特定设备硬编码；
-  - 通用拉取协议与 HTTP 长轮询秒级响应；
-  - 端口环境变量解耦 (`OPENINK_PORT`)，支持与现有 8000 端口服务无缝并存；
-  - 自动轮播时间扩展至小时级（支持心跳式分段长轮询）；
-  - Web Kiosk 零安装全屏终端。
-- **v1.3 (规划中 · 数码相框与照片轮播)**：
-  - **E-Ink 灰度相册管线**：支持 JPEG/PNG 图片上传，自动构图居中裁剪与 16 级灰阶量化；
-  - **抖动算法引擎**：集成 Floyd-Steinberg / Atkinson 误差扩散抖动，呈现高细节相片质感；
-  - **混排与独立相框**：支持「主看板 + 家庭相册」混合轮播，或独立全屏数码相框模式。
+### 1. 汉王 N516 (OpenInkpot · USB Network) 终端
+
+针对 N516 通过 USB 与网关/服务器连接的点对点场景，项目提供了专用持久化守护脚本：
+
+```bash
+# 在服务端执行一键部署脚本（通过 SSH 写入 N516 NAND Flash）
+./clients/n516-openinkpot/install_n516.sh n516
+```
+
+- **BusyBox `init` 原生常驻**：注册为 `/etc/inittab` 重生进程（`::respawn:/usr/local/bin/openink-agent.sh`），异常退出或冷重启后自动拉起。
+- **150ms 无闪原地刷新**：利用双缓冲机制与 `NEXT_IMAGE` 按键注入绕过 madeye 缓存，避免重启窗口。
+- **断网 0% CPU 智能休眠**：检测到 USB 网卡断开时进入休眠等待，重新接通后自动自愈恢复同步。
+
+### 2. 亚马逊 Kindle 与通用 Wi-Fi 墨水屏设备
+
+OpenInk 采用通用的 HTTP 拉取协议，支持任何具备网络连接与图像显示能力的墨水屏终端（如已越狱 Kindle、Android 电纸书、ESP32 墨水屏、TRMNL 等）。
+
+**通用拉取流程示例**：
+```bash
+# 1. 查询当前播放清单与图像 URL
+JSON=$(curl -s "http://<主机IP>:8080/api/v1/display?device_id=kindle")
+IMG_URL=$(echo "$JSON" | grep -o 'http[^"]*landscape[^"]*' | head -n 1)
+
+# 2. 下载并呈现到屏幕
+curl -s "$IMG_URL" -o /tmp/screen.png
+# 使用终端专属工具刷新屏幕（例如 Kindle 的 eips 命令）
+eips -g /tmp/screen.png
+```
+
+---
+
+## 📄 开源许可证
+
+本项目基于 [MIT License](LICENSE) 开源。
