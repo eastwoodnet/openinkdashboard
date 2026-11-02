@@ -26,7 +26,7 @@ DEFAULT_SCHEDULE: Dict[str, Any] = {
             "start": "07:30",
             "end": "12:00",
             "mode": "carousel",
-            "pages": ["page_1"],
+            "pages": [],
             "carousel_interval_sec": 60,
         },
         {
@@ -35,7 +35,7 @@ DEFAULT_SCHEDULE: Dict[str, Any] = {
             "start": "12:00",
             "end": "18:30",
             "mode": "carousel",
-            "pages": ["page_1", "page_2"],
+            "pages": [],
             "carousel_interval_sec": 60,
         },
         {
@@ -44,7 +44,7 @@ DEFAULT_SCHEDULE: Dict[str, Any] = {
             "start": "18:30",
             "end": "23:00",
             "mode": "carousel",
-            "pages": ["page_2"],
+            "pages": [],
             "carousel_interval_sec": 60,
         },
         {

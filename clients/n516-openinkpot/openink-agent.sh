@@ -122,9 +122,12 @@ MADEYE_LAUNCHED_ONCE=0
 USER_EXITED_TO_READER=0
 
 ensure_madeye_running() {
-    # $1: force_respawn (1=新版本或紧急通知强制唤醒; 0=常规轮询尊重阅读模式)
+    # $1: force_respawn (1=新版本、文件集变动或紧急通知强制唤醒; 0=常规轮询尊重阅读模式)
     FORCE="$1"
-    if pidof madeye >/dev/null 2>&1; then
+    if [ "$FORCE" = "1" ]; then
+        killall -9 madeye 2>/dev/null || true
+        sleep 0.5
+    elif pidof madeye >/dev/null 2>&1; then
         return 0
     fi
     if [ "$MADEYE_LAUNCHED_ONCE" = "1" ] && [ "$FORCE" != "1" ]; then
@@ -201,11 +204,11 @@ sync_display() {
         if [ "$ALERT_HASH" != "$LAST_ALERT_HASH" ] || [ "$LAST_ALERT_ACTIVE" != "true" ]; then
             if http_get 5 "$CACHE_DIR/00_alert.png.tmp" "$ALERT_URL"; then
                 mv "$CACHE_DIR/00_alert.png.tmp" "$CACHE_DIR/00_alert.png"
-                # 覆盖 /tmp/dashboard 为双份 00_alert.png，确保一次 NEXT_IMAGE 即可立即全屏呈现通知
+                # 覆盖 /tmp/dashboard 为双份 00_alert.png 并重新加载 madeye 呈现通知
                 rm -f "$DASH_DIR"/*.png
-                cp "$CACHE_DIR/00_alert.png" "$DASH_DIR/01_page_1.png"
+                cp "$CACHE_DIR/00_alert.png" "$DASH_DIR/00_alert.png"
                 cp "$CACHE_DIR/00_alert.png" "$DASH_DIR/02_page_1_dup.png"
-                trigger_inplace_refresh "carousel" 1
+                ensure_madeye_running 1
                 if [ "$ALERT_HASH" != "$LAST_ALERT_HASH" ]; then
                     aplay -q /usr/share/madaudio/beep.wav >/dev/null 2>&1 &
                 fi
@@ -247,10 +250,27 @@ sync_display() {
 
     [ "$COUNT" -gt 0 ] && PAGE_COUNT="$COUNT"
 
-    # 若刚从紧急通知恢复，或之前文件数不一致，也触发同步
+    # 若刚从紧急通知恢复，触发同步
     if [ "$LAST_ALERT_ACTIVE" = "true" ]; then
         ANY_CHANGED=1
         LAST_ALERT_ACTIVE="false"
+    fi
+
+    # 检查当前看板目录与目标文件集是否发生变动
+    CUR_FILES=$(cd "$DASH_DIR" 2>/dev/null && ls *.png 2>/dev/null | sort | tr '\n' ' ' | sed 's/ *$//')
+    WANTED_FILES=""
+    for FNAME in $VALID_FILES; do
+        WANTED_FILES="$WANTED_FILES $FNAME"
+    done
+    if [ "$PAGE_COUNT" -le 1 ] && [ -n "$VALID_FILES" ]; then
+        WANTED_FILES="$WANTED_FILES 02_page_1_dup.png"
+    fi
+    WANTED_FILES=$(echo "$WANTED_FILES" | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/^ *//;s/ *$//')
+
+    FILESET_CHANGED=0
+    if [ "$CUR_FILES" != "$WANTED_FILES" ]; then
+        FILESET_CHANGED=1
+        ANY_CHANGED=1
     fi
 
     # 检查 /tmp/dashboard 是否缺文件
@@ -269,7 +289,14 @@ sync_display() {
         if [ "$PAGE_COUNT" -le 1 ] && [ -s "$DASH_DIR/01_page_1.png" ]; then
             cp "$DASH_DIR/01_page_1.png" "$DASH_DIR/02_page_1_dup.png"
         fi
-        trigger_inplace_refresh "$CURRENT_MODE" "$PAGE_COUNT"
+
+        if [ "$FILESET_CHANGED" = "1" ] || ! pidof madeye >/dev/null 2>&1; then
+            # 文件集发生增减变动时，必须重新拉起 madeye 让其扫描加载最新的完整文件列表，彻底杜绝翻页白屏
+            ensure_madeye_running 1
+        else
+            # 文件集未发生增减（仅同名图像内容哈希更新）：进行 150ms 无闪原地翻页
+            trigger_inplace_refresh "$CURRENT_MODE" "$PAGE_COUNT"
+        fi
     else
         # 没有内容变更时，仅在首次启动时拉起 madeye
         ensure_madeye_running 0

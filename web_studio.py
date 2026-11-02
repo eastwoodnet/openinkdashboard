@@ -235,6 +235,7 @@ def _render_cached_pages(
     force_refresh: bool = False,
     rotate_portrait: bool = True,
     notify: str = "always",
+    ignore_schedule_rule: bool = False,
 ) -> Dict[str, Any]:
     """
     Renders the pages active in the current schedule slot into `/tmp/openink_assets/portrait/`
@@ -250,7 +251,8 @@ def _render_cached_pages(
     if not pages_data:
         pages_data = normalize_dashboard_pages(cfg)
     sched_state = evaluate_schedule(cfg)
-    pages_data = filter_pages_for_rule(pages_data, sched_state["active_rule"])
+    if not ignore_schedule_rule:
+        pages_data = filter_pages_for_rule(pages_data, sched_state["active_rule"])
     old_hashes = [(it["filename"], it["hash"]) for it in display_manager.playlist]
 
     portrait_dir = os.path.join(ASSETS_BASE_DIR, "portrait")
@@ -561,6 +563,7 @@ def _do_publish_pages(req: LayoutRequest) -> Dict[str, Any]:
         pages_data=pages_data,
         city_override=req.city,
         active_page_index=req.active_page_index,
+        ignore_schedule_rule=True,
     )
 
 
