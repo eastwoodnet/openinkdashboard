@@ -100,8 +100,8 @@ def normalize_schedule_config(raw_schedule: Optional[Dict[str, Any]]) -> Dict[st
     for idx, r in enumerate(raw_rules[:24]):
         if not isinstance(r, dict):
             continue
-        start_str = (r.get("start") or "08:00").strip()
-        end_str = (r.get("end") or "22:00").strip()
+        start_str = str(r.get("start") or "08:00").strip()
+        end_str = str(r.get("end") or "22:00").strip()
         if not parse_hm(start_str) or not parse_hm(end_str):
             continue
         mode = r.get("mode") if r.get("mode") in ("carousel", "manual", "sleep_dnd") else "carousel"
@@ -113,8 +113,8 @@ def normalize_schedule_config(raw_schedule: Optional[Dict[str, Any]]) -> Dict[st
             c_int = 60
 
         clean_rules.append({
-            "id": (r.get("id") or f"rule_{idx + 1}").strip(),
-            "name": (r.get("name") or f"时段 {idx + 1}").strip(),
+            "id": str(r.get("id") or f"rule_{idx + 1}").strip(),
+            "name": str(r.get("name") or f"时段 {idx + 1}").strip(),
             "start": start_str,
             "end": end_str,
             "mode": mode,

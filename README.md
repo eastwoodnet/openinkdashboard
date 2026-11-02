@@ -67,8 +67,11 @@ pip install -r requirements.txt
 ### 2. 启动服务端
 
 ```bash
-# 本地测试启动（默认监听 0.0.0.0:8080）
-OPENINK_BIND=0.0.0.0 OPENINK_PORT=8080 .venv/bin/python3 web_studio.py
+# 本地测试启动（默认仅监听 127.0.0.1:8080）
+.venv/bin/python3 web_studio.py
+
+# 局域网终端部署：必须显式设置强 Token；生产环境同时配置 HTTPS 反向代理
+OPENINK_API_TOKEN='请替换为高强度随机值' OPENINK_BIND=0.0.0.0 .venv/bin/python3 web_studio.py
 ```
 
 - **OpenInk Studio 管理面板**：`http://<主机IP>:8080`
@@ -89,7 +92,7 @@ User=root
 WorkingDirectory=/opt/openink
 Environment=OPENINK_BIND=0.0.0.0
 Environment=OPENINK_PORT=8080
-Environment=OPENINK_API_TOKEN=
+Environment=OPENINK_API_TOKEN=请替换为高强度随机值
 ExecStart=/opt/openink/venv/bin/python3 /opt/openink/web_studio.py
 Restart=always
 RestartSec=5
@@ -115,6 +118,14 @@ sudo systemctl status openink
 # 在服务端执行一键部署脚本（通过 SSH 写入 N516 NAND Flash）
 ./clients/n516-openinkpot/install_n516.sh n516
 ```
+
+N516 位于隔离 USB 点对点网段时，可在服务端 `.env` 设置以下来源 IP 豁免，N516 不需要 Token：
+
+```sh
+OPENINK_N516_NO_AUTH_IPS=192.168.111.1
+```
+
+其他部署方式可在 N516 的 `/etc/openink-agent.conf` 中单独配置 `OPENINK_API_TOKEN`。豁免只作用于 `/api/v1/*` 设备接口，不适用于 Studio 管理接口。
 
 - **BusyBox `init` 原生级常驻守护**：写入 `/etc/inittab` (`::respawn:/usr/local/bin/openink-agent.sh`)，无论断网重连、异常退出还是设备冷重启，均由系统 1 号进程自动毫秒级拉起，无需任何后台 nohup。
 - **双重防死锁超时保护**：集成 `busybox-full timeout` 与 `wget -T` 双层网络超时，彻底杜绝嵌入式精简 TCP 栈在长轮询中断开导致的进程死锁挂起。
@@ -145,19 +156,32 @@ sudo systemctl status openink
 
 ## 🔒 外网反向代理与 API Token 鉴权
 
-OpenInk 默认采用 **局域网免配置模式**（未设置 `OPENINK_API_TOKEN` 时免密访问，Web 面板自动隐藏密钥输入框）。
+OpenInk 默认仅监听 `127.0.0.1`。局域网绑定非回环地址且不使用 Token 时，需要显式设置 `OPENINK_ALLOW_INSECURE_NO_AUTH=1`；公网部署应使用 HAProxy/Nginx 提供 HTTPS。
 
-当您需要将服务部署在公网，或需要防护外部 Webhook 时，可通过环境变量设置 Token：
+个人部署按通信角色配置：
+
+```sh
+# 手机、第三方应用和非可信网络 API 使用
+OPENINK_API_TOKEN=请替换为高强度随机值
+# 可信 LAN 中的 Studio 管理接口免 Token
+OPENINK_STUDIO_TRUSTED_CIDRS=192.168.1.0/24
+# 仅 N516 USB 来源地址免 Token
+OPENINK_N516_NO_AUTH_IPS=192.168.111.1
+```
+
+- 外部通知使用 `/api/alert/*`，始终按 Token 配置鉴权。
+- Studio 的 Alert 操作使用 `/api/studio/alert/*`，遵循可信 LAN 规则。
+- 可信 LAN 只作用于 Studio 管理接口，不会放行外部通知接口。
+- 只使用直连来源 IP，不信任 `X-Forwarded-For`；HAProxy 后的外部请求仍需 Token。
+- 推荐通过 `X-API-Token` 或 `Authorization: Bearer` 传递凭据，避免 URL Query 泄漏。
+
+局域网终端或外部 Webhook 可通过环境变量设置 Token：
 
 ```bash
 export OPENINK_API_TOKEN="your-secure-token"
 ```
 
-支持三种传入方式，全面兼容各类设备环境：
-1. **HTTP Header (标准 API)**：`X-API-Token: your-secure-token`
-2. **Bearer Header (标准 Webhook)**：`Authorization: Bearer your-secure-token`
-3. **URL Query (嵌入式终端 / 快捷指令)**：`?token=your-secure-token`
-   - 当终端使用 `GET /api/v1/display?token=...` 请求时，服务端下发的图像 URL 会自动携带 `token` 凭据，方便轻量级固件直接下载。
+外部客户端使用 `X-API-Token: your-secure-token` 或 `Authorization: Bearer your-secure-token`。服务端不会把 Token 写入下发的图片 URL。
 
 ---
 

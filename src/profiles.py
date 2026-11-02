@@ -37,7 +37,7 @@ DEFAULT_PROFILE = DeviceProfile(
     ppi=167,
     has_grayscale=True,
     has_red_channel=False,
-    min_font_size=12
+    min_font_size=14
 )
 
 PROFILES: Dict[str, DeviceProfile] = {

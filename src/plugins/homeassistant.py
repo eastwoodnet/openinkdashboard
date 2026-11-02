@@ -4,6 +4,7 @@ Fetches indoor environment sensor metrics (temperature, humidity) from Home Assi
 """
 
 import json
+import os
 import re
 import urllib.request
 import ssl
@@ -15,11 +16,12 @@ MAX_HA_RESP_BYTES = 256 * 1024
 
 
 class HomeAssistantClient:
-    def __init__(self, base_url: str, token: str):
+    def __init__(self, base_url: str, token: str, ca_file: str = ""):
         clean_base = validate_external_url(base_url, allow_private_lan=True)
         self.base_url = clean_base.rstrip("/") if clean_base else ""
         self.token = (token or "").strip()
-        self.ctx = ssl._create_unverified_context()
+        # 自签名内网 HA 通过显式 CA 文件信任，禁止关闭证书和主机名验证。
+        self.ctx = ssl.create_default_context(cafile=ca_file or os.environ.get("HA_CA_FILE") or None)
         self.headers = {
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
@@ -34,7 +36,10 @@ class HomeAssistantClient:
         try:
             with urllib.request.urlopen(req, context=self.ctx, timeout=4) as resp:
                 if resp.status == 200:
-                    return json.loads(resp.read(MAX_HA_RESP_BYTES).decode("utf-8"))
+                    body = resp.read(MAX_HA_RESP_BYTES + 1)
+                    if len(body) > MAX_HA_RESP_BYTES:
+                        raise ValueError("HA response too large")
+                    return json.loads(body.decode("utf-8"))
         except Exception:
             return None
         return None
@@ -50,7 +55,10 @@ class HomeAssistantClient:
         try:
             with urllib.request.urlopen(req, context=self.ctx, timeout=4) as resp:
                 if resp.status == 200:
-                    data = json.loads(resp.read(MAX_HA_RESP_BYTES).decode("utf-8"))
+                    body = resp.read(MAX_HA_RESP_BYTES + 1)
+                    if len(body) > MAX_HA_RESP_BYTES:
+                        return {"ok": False, "error": "HA 响应超过大小限制"}
+                    data = json.loads(body.decode("utf-8"))
                     version = ""
                     try:
                         cfg_data = self._api_get("config")

@@ -34,7 +34,7 @@ PLUGIN_CATALOG: List[Dict[str, Any]] = [
         "slot_options": {
             "quadrant": {"id": "agenda", "name": "📆 外部日程与倒数 (Plugin)", "desc": "重点倒数日胶囊 + 近期 3 项 ICS 日程"},
             "half_v":   {"id": "agenda", "name": "📆 外部日程时间轴 (Plugin)", "desc": "2 项里程碑倒计时 + 6 项近期日程时间轴"},
-            "full":     {"id": "agenda", "name": "📆 全屏日程与倒数日 (Plugin)", "desc": "780×580 全宽展示里程碑倒计时与日程时间轴"}
+            "full":     {"id": "agenda", "name": "📆 全屏日程与倒数日 (Plugin)", "desc": "744×537 全宽展示里程碑倒计时与日程时间轴"}
         }
     },
     {
@@ -47,7 +47,7 @@ PLUGIN_CATALOG: List[Dict[str, Any]] = [
         "slot_options": {
             "quadrant": {"id": "sensors", "name": "🌡️ 室内环境指标 (Plugin)", "desc": "Home Assistant 4 项温湿度虚线双栏"},
             "half_v":   {"id": "sensors", "name": "🌡️ 全屋环境监控 (Plugin)", "desc": "Home Assistant 最多 8 项房间温湿度卡"},
-            "full":     {"id": "sensors", "name": "🌡️ 全屏全屋环境监控 (Plugin)", "desc": "780×580 全宽展示 HA 各房间温湿度卡片"}
+            "full":     {"id": "sensors", "name": "🌡️ 全屏全屋环境监控 (Plugin)", "desc": "744×537 全宽展示 HA 各房间温湿度卡片"}
         }
     }
 ]
@@ -67,21 +67,16 @@ def _fetch_sensors_plugin(cfg: Dict[str, Any], force_refresh: bool = False) -> L
     sensor_cfgs = sensors_plugin.get("items") or ha_cfg.get("sensors", [])
     token = get_secret(ha_cfg, "token")
     if ha_cfg.get("url") and token and sensor_cfgs:
-        ha = HomeAssistantClient(ha_cfg["url"], token)
+        ha = HomeAssistantClient(ha_cfg["url"], token, ca_file=ha_cfg.get("ca_file", ""))
         data = ha.get_sensors_data(sensor_cfgs)
         if data and any(d.get("display") not in ("--", "", None) for d in data):
             return data
 
-    defaults = [
-        {"id": "sensor.living_room_temperature", "name": "客厅温度", "display": "22.4 °C"},
-        {"id": "sensor.living_room_humidity", "name": "客厅湿度", "display": "48.2 %"},
-    ]
-    default_map = {d["name"]: d["display"] for d in defaults}
     fallback = []
-    for s in (sensor_cfgs or defaults):
+    for s in sensor_cfgs:
         name = s.get("name", "传感器")
-        disp = s.get("display") or default_map.get(name, "--")
-        fallback.append({"id": s.get("id", ""), "name": name, "display": disp})
+        # display 是用户保存的最后已知值；没有旧值时明确显示未知，不生成演示读数。
+        fallback.append({"id": s.get("id", ""), "name": name, "display": s.get("display") or "--"})
     return fallback
 
 

@@ -9,7 +9,7 @@ import cairo
 from profiles import DeviceProfile
 from widgets.base import (
     WidgetBase, draw_pango_text, draw_pango_text_right, draw_rounded_rect,
-    draw_checkbox, draw_task_text,
+    draw_checkbox, draw_task_text, measure_task_text,
     INK_BLACK, INK_WHITE, INK_DIVIDER, INK_TRACK_GRAY, INK_RED,
     CARD_PAD_X, CARD_PAD_Y
 )
@@ -79,24 +79,27 @@ class TodoWidget(WidgetBase):
         cur_y = line_y + 14
 
         for i, it in enumerate(display_items):
-            if cur_y + box_sz > bar_y - 10:
-                break
-
             done = it.get("done", False)
             text = it.get("text", "")
             seq_num = i + 1
-
-            # Crisp vector checkbox with centered checkmark
-            draw_checkbox(cr, pad_x, cur_y + 2, size=box_sz, checked=done)
-
-            # Task text with per-line ink-width strikethrough and dynamic height measurement
             text_x = pad_x + box_sz + 12
             max_text_w = w - text_x - pad_x
+            task_text = f"{seq_num}. {text}"
+            task_font_size = font_sz - 1 if done else font_sz
 
-            _, th = draw_task_text(
-                cr, f"{seq_num}. {text}",
+            # 绘制前测量完整折行高度，文字和复选框都不能侵入底部进度条。
+            _, th = measure_task_text(
+                cr, task_text, font_size=task_font_size,
+                max_width=max_text_w, done=done
+            )
+            if cur_y + max(th, box_sz + 2) > bar_y - 10:
+                break
+
+            draw_checkbox(cr, pad_x, cur_y + 2, size=box_sz, checked=done)
+            draw_task_text(
+                cr, task_text,
                 text_x, cur_y,
-                font_size=font_sz - 1 if done else font_sz,
+                font_size=task_font_size,
                 max_width=max_text_w,
                 done=done,
                 color=INK_BLACK

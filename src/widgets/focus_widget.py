@@ -15,7 +15,7 @@ from gi.repository import Pango
 from profiles import DeviceProfile
 from widgets.base import (
     WidgetBase, draw_pango_text, draw_pango_text_right, draw_rounded_rect,
-    draw_badge_pill, draw_hero_text, draw_checkbox, draw_task_text,
+    draw_badge_pill, draw_hero_text, draw_checkbox, draw_task_text, measure_task_text,
     draw_dotted_kv_row, draw_weather_icon,
     INK_BLACK, INK_WHITE, INK_DIVIDER, INK_TRACK_GRAY, INK_RED,
     CARD_PAD_X, CARD_PAD_Y
@@ -92,9 +92,15 @@ class FocusWidget(WidgetBase):
         cr.line_to(pad_x + card_w - 20, inner_div)
         cr.stroke()
 
-        # Alert Body Text (Generous 22pt big-text font size and line spacing)
+        # 正文限制在卡片内部；超出高度时由 Pango 在最后一行末尾省略。
         body = alert.get("body") or alert.get("text") or "无详细正文内容"
-        draw_pango_text(cr, body, pad_x + 24, inner_div + 22, 22, bold=False, color=INK_BLACK, max_width=card_w - 48, wrap=True, line_spacing=8)
+        body_y = inner_div + 22
+        body_max_h = card_y + card_h - 20 - body_y
+        if body_max_h > 0:
+            draw_pango_text(
+                cr, body, pad_x + 24, body_y, 22, bold=False, color=INK_BLACK,
+                max_width=card_w - 48, wrap=True, line_spacing=8, max_height=body_max_h
+            )
 
         # Bottom Hint Bar
         timeout = alert.get("timeout", 0)
@@ -122,13 +128,13 @@ class FocusWidget(WidgetBase):
         ganzhi_str = f"{lunar.get('ganzhi', '丙午')}年【{lunar.get('zodiac', '马')}】"
         term = lunar.get("term", "")
 
-        city = wtr.get("city", "北京")
-        desc = wtr.get("desc", "晴朗")
-        temp = wtr.get("temp", "16°C")
-        feels_like = wtr.get("feels_like", temp)
-        temp_range = wtr.get("temp_range", "13°C ~ 18°C")
-        humidity = wtr.get("humidity", "45%")
-        wind_cn = wtr.get("wind_cn", "微风")
+        city = wtr.get("city", "--")
+        desc = wtr.get("desc", "天气不可用")
+        temp = wtr.get("temp", "--°C")
+        feels_like = wtr.get("feels_like", "--°C")
+        temp_range = wtr.get("temp_range", "--°C ~ --°C")
+        humidity = wtr.get("humidity", "--%")
+        wind_cn = wtr.get("wind_cn", "--")
 
         items = todos_data.get("items", [])
         total = todos_data.get("total", 0)
@@ -140,7 +146,11 @@ class FocusWidget(WidgetBase):
 
         # === 1. MIDDLE SPLIT: LEFT (CALENDAR & WEATHER) | RIGHT (TODOS) ===
         mid_x = int(w / 2)
-        divider_bottom = 436
+        strip_h = 96
+        wy = h - 20 - strip_h
+        line2_y = wy - 14
+        divider_bottom = line2_y - 10
+        bar_y = divider_bottom - 18
 
         # Center vertical divider
         cr.set_source_rgb(*INK_DIVIDER)
@@ -174,11 +184,12 @@ class FocusWidget(WidgetBase):
         draw_pango_text(cr, f"农历  {lunar_str}", rx, cal_hero_y - 1, 17, bold=True, color=INK_BLACK, max_width=max_rw)
         draw_pango_text(cr, f"岁次  {ganzhi_str}", rx, cal_hero_y + 31, 14, bold=False, color=INK_BLACK, max_width=max_rw)
 
-        days_to_ny = 365 - datetime.date(year, month, day).timetuple().tm_yday
+        today_dt = datetime.date(year, month, day)
+        days_to_ny = (datetime.date(year + 1, 1, 1) - today_dt).days
         if term:
             countdown_str = f"节气 · {term}  (距新年 {days_to_ny} 天)"
         else:
-            countdown_str = f"距 2027 丙午新年还有 {days_to_ny} 天"
+            countdown_str = f"距 {year + 1} 年新年还有 {days_to_ny} 天"
         draw_pango_text(cr, countdown_str, rx, cal_hero_y + 60, 12, bold=False, color=INK_BLACK, max_width=max_rw)
 
         # Horizontal Divider between Date and Weather
@@ -196,7 +207,6 @@ class FocusWidget(WidgetBase):
             font_size=13, pad_h=12, height=26
         )
         draw_pango_text(cr, desc, pad_x + cbw + 12, wtr_head_y + 3, 16, bold=True, color=INK_BLACK)
-        draw_pango_text_right(cr, "空气 优 · 32", left_right_edge, wtr_head_y + 5, 13, bold=False, color=INK_BLACK)
 
         # Weather Hero: Vector Icon + Ink-Box Giant Temp + High/Low Stack
         wtr_hero_y = 228
@@ -214,8 +224,10 @@ class FocusWidget(WidgetBase):
             ("相对湿度", humidity),
             ("实时风况", wind_cn),
         ]
-        start_ky = 302
-        row_step = 40
+        start_ky = wtr_hero_y + 62
+        kv_row_h = 30
+        kv_bottom = divider_bottom - 8
+        row_step = min(40, max(kv_row_h, int((kv_bottom - start_ky - kv_row_h) / 2)))
         for idx, (k_label, k_val) in enumerate(kv_rows):
             draw_dotted_kv_row(
                 cr, k_label, k_val,
@@ -243,28 +255,29 @@ class FocusWidget(WidgetBase):
 
         # Task list with dynamic multi-line vertical flow and per-line strikethrough
         display_items = items[:6]
-        bar_y = 418
         cur_y = sub_div2 + 14
         box_sz = 18
         row_gap = 14
         min_step = 44
 
         for i, it in enumerate(display_items):
-            if cur_y + box_sz > bar_y - 10:
-                break
-
             done = it.get("done", False)
             text = it.get("text", "")
             seq_num = i + 1
-
-            draw_checkbox(cr, rx_start, cur_y + 2, size=box_sz, checked=done)
-
             text_x = rx_start + box_sz + 12
             max_text_w = w - pad_x - text_x
-            text_color = INK_RED if (not done and profile.has_red_channel and i == 0) else INK_BLACK
+            task_text = f"{seq_num}. {text}"
 
-            _, th = draw_task_text(
-                cr, f"{seq_num}. {text}",
+            _, th = measure_task_text(
+                cr, task_text, font_size=15, max_width=max_text_w, done=done
+            )
+            if cur_y + max(th, box_sz + 2) > bar_y - 10:
+                break
+
+            draw_checkbox(cr, rx_start, cur_y + 2, size=box_sz, checked=done)
+            text_color = INK_RED if (not done and profile.has_red_channel and i == 0) else INK_BLACK
+            draw_task_text(
+                cr, task_text,
                 text_x, cur_y,
                 font_size=15,
                 max_width=max_text_w,
@@ -291,7 +304,6 @@ class FocusWidget(WidgetBase):
             cr.fill()
 
         # === 3. BOTTOM BAR: 7-DAY HORIZON STRIP ===
-        line2_y = 446
         cr.set_source_rgb(*INK_DIVIDER)
         cr.set_line_width(1.0)
         cr.move_to(pad_x, line2_y)
@@ -306,8 +318,6 @@ class FocusWidget(WidgetBase):
         total_strip_w = w - pad_x * 2
         col_gap = 8
         cell_w = (total_strip_w - 6 * col_gap) / 7
-        wy = 460
-        strip_h = 96
 
         for i, wd in enumerate(weekdays):
             cur_date = monday_dt + datetime.timedelta(days=i)

@@ -29,13 +29,7 @@ class SensorWidget(WidgetBase):
     ):
         sensors = context.get("sensors", [])
         if not sensors:
-            sensors = [
-                {"name": "工作间温度", "display": "22.4 °C"},
-                {"name": "工作间湿度", "display": "48.2 %"},
-                {"name": "儿童房温度", "display": "23.1 °C"},
-                {"name": "儿童房湿度", "display": "50.5 %"},
-                {"name": "遥控器温度", "display": "21.8 °C"}
-            ]
+            sensors = [{"name": "传感器未配置", "display": "--"}]
 
         pad_x = CARD_PAD_X
         pad_y = CARD_PAD_Y

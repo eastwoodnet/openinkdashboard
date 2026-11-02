@@ -17,6 +17,9 @@
 export DISPLAY="${DISPLAY:-:0}"
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
+# 可选持久化配置由安装管理员以 0600 权限写入，避免把 Token 硬编码进仓库。
+[ -r /etc/openink-agent.conf ] && . /etc/openink-agent.conf
+
 SERVER="${OPENINK_SERVER:-http://192.168.111.2:8080}"
 DEVICE_ID="${OPENINK_DEVICE_ID:-n516}"
 CACHE_DIR="/tmp/openink_cache"
@@ -53,13 +56,49 @@ else
 fi
 
 http_get() {
-    # $1: read timeout seconds
-    # $2: output file (- for stdout)
-    # $3: url
+    # $1: read timeout seconds; $2: output file (- for stdout); $3: URL
     _TO="${1:-10}"
     _OUT="$2"
     _URL="$3"
     _HARD_TO=$((_TO + 5))
+    if [ -n "$OPENINK_API_TOKEN" ]; then
+        # BusyBox wget 只能把自定义 Header 放进 argv，会经 ps 泄露 Token。
+        # 在隔离的 USB HTTP 链路上改用 nc，凭据仅写入请求 stdin，不进入进程参数。
+        case "$_URL" in
+            http://*) ;;
+            *) return 1 ;;
+        esac
+        _NO_SCHEME=${_URL#http://}
+        _HOSTPORT=${_NO_SCHEME%%/*}
+        _TARGET=/${_NO_SCHEME#*/}
+        _HOST=${_HOSTPORT%%:*}
+        case "$_HOSTPORT" in
+            *:*) _PORT=${_HOSTPORT##*:} ;;
+            *) _PORT=80 ;;
+        esac
+        [ -n "$_HOST" ] && [ -n "$BB" ] || return 1
+        _RAW="$CACHE_DIR/.http_$$.raw"
+        _BODY="$CACHE_DIR/.http_$$.body"
+        rm -f "$_RAW" "$_BODY"
+        {
+            printf 'GET %s HTTP/1.0\r\nHost: %s\r\nX-API-Token: %s\r\nConnection: close\r\n\r\n' \
+                "$_TARGET" "$_HOSTPORT" "$OPENINK_API_TOKEN"
+        } | $BB timeout -t "$_HARD_TO" $BB nc -w "$_TO" "$_HOST" "$_PORT" > "$_RAW" 2>/dev/null
+        _STATUS=$(head -n 1 "$_RAW" 2>/dev/null | awk '{print $2}')
+        case "$_STATUS" in
+            2*) ;;
+            *) rm -f "$_RAW" "$_BODY"; return 1 ;;
+        esac
+        sed '1,/^\r\{0,1\}$/d' "$_RAW" > "$_BODY"
+        if [ "$_OUT" = "-" ]; then
+            cat "$_BODY"
+        else
+            cat "$_BODY" > "$_OUT"
+        fi
+        _RESULT=$?
+        rm -f "$_RAW" "$_BODY"
+        return "$_RESULT"
+    fi
     if [ -n "$BB" ] && $BB timeout --help >/dev/null 2>&1; then
         $BB timeout -t "$_HARD_TO" $BB wget -q -T "$_TO" -O "$_OUT" "$_URL" 2>/dev/null
     elif [ -n "$BB" ]; then
@@ -67,6 +106,29 @@ http_get() {
     else
         wget -q -O "$_OUT" "$_URL" 2>/dev/null
     fi
+}
+
+download_asset() {
+    # 仅接受本机服务端资产；失败或超过 2 MiB 时保留已有缓存。
+    _OUT="$2"
+    case "$3" in
+        "$SERVER/api/v1/assets/"?*) ;;
+        *) return 1 ;;
+    esac
+    rm -f "$_OUT"
+    if ! http_get "$1" "$_OUT" "$3" || [ ! -s "$_OUT" ]; then
+        rm -f "$_OUT"
+        return 1
+    fi
+    _SIZE=$(wc -c < "$_OUT" 2>/dev/null | tr -d '[:space:]')
+    case "$_SIZE" in
+        ''|*[!0-9]*) rm -f "$_OUT"; return 1 ;;
+    esac
+    if [ "$_SIZE" -gt 2097152 ]; then
+        rm -f "$_OUT"
+        return 1
+    fi
+    return 0
 }
 
 # ------------------------------------------------------------------------------
@@ -126,7 +188,7 @@ ensure_madeye_running() {
     FORCE="$1"
     if [ "$FORCE" = "1" ]; then
         killall -9 madeye 2>/dev/null || true
-        sleep 0.5
+        sleep 1
     elif pidof madeye >/dev/null 2>&1; then
         return 0
     fi
@@ -201,8 +263,14 @@ sync_display() {
     ALERT_URL=$(json_str "$ALERT_SECTION" "url")
 
     if [ "$ALERT_ACTIVE" = "true" ] && [ -n "$ALERT_URL" ]; then
+        case "$ALERT_URL" in
+            "$SERVER/api/v1/assets/"?*) ;;
+            *) return 1 ;;
+        esac
+        # 通知未变化也会推进版本，避免 wait 立即返回 changed=true 形成高速循环。
+        LAST_VERSION="$VERSION"
         if [ "$ALERT_HASH" != "$LAST_ALERT_HASH" ] || [ "$LAST_ALERT_ACTIVE" != "true" ]; then
-            if http_get 5 "$CACHE_DIR/00_alert.png.tmp" "$ALERT_URL"; then
+            if download_asset 5 "$CACHE_DIR/00_alert.png.tmp" "$ALERT_URL"; then
                 mv "$CACHE_DIR/00_alert.png.tmp" "$CACHE_DIR/00_alert.png"
                 # 覆盖 /tmp/dashboard 为双份 00_alert.png 并重新加载 madeye 呈现通知
                 rm -f "$DASH_DIR"/*.png
@@ -214,41 +282,64 @@ sync_display() {
                 fi
                 LAST_ALERT_HASH="$ALERT_HASH"
                 LAST_ALERT_ACTIVE="true"
-                LAST_VERSION="$VERSION"
+            else
+                return 1
             fi
         fi
         return 0
     fi
 
-    # 解析 playlist 数组中的 (filename, hash, url)
+    # 文件名只由严格校验后的 playlist index 生成，不使用 manifest filename。
     PLAYLIST_RAW=$(echo "$MANIFEST" | sed -n 's/.*"playlist"[[:space:]]*:[[:space:]]*\[\(.*\)\].*/\1/p')
     ANY_CHANGED=0
     COUNT=0
+    SYNC_FAILED=0
     VALID_FILES=""
 
     # 逐对象解析 playlist
     OLD_IFS="$IFS"
     IFS="}"
     for ITEM in $PLAYLIST_RAW; do
-        FNAME=$(json_str "$ITEM" "filename")
+        FINDEX=$(json_val "$ITEM" "index")
         FHASH=$(json_str "$ITEM" "hash")
         FURL=$(json_str "$ITEM" "url")
-        if [ -n "$FNAME" ] && [ -n "$FURL" ]; then
-            COUNT=$((COUNT + 1))
-            VALID_FILES="$VALID_FILES $FNAME"
-            OLD_HASH=$(cat "$CACHE_DIR/$FNAME.hash" 2>/dev/null)
-            if [ "$FHASH" != "$OLD_HASH" ] || [ ! -s "$CACHE_DIR/$FNAME" ]; then
-                if http_get 8 "$CACHE_DIR/$FNAME.tmp" "$FURL"; then
-                    mv "$CACHE_DIR/$FNAME.tmp" "$CACHE_DIR/$FNAME"
-                    echo "$FHASH" > "$CACHE_DIR/$FNAME.hash"
-                    ANY_CHANGED=1
-                fi
+        case "$FINDEX" in
+            ''|*[!0-9]*) SYNC_FAILED=1; continue ;;
+        esac
+        if ! [ "$FINDEX" -gt 0 ] 2>/dev/null; then
+            SYNC_FAILED=1
+            continue
+        fi
+        case "$FURL" in
+            "$SERVER/api/v1/assets/"?*) ;;
+            *) SYNC_FAILED=1; continue ;;
+        esac
+        FNAME=$(printf '%02d_page_%d.png' "$FINDEX" "$FINDEX")
+        COUNT=$((COUNT + 1))
+        VALID_FILES="$VALID_FILES $FNAME"
+        OLD_HASH=$(cat "$CACHE_DIR/$FNAME.hash" 2>/dev/null)
+        if [ "$FHASH" != "$OLD_HASH" ] || [ ! -s "$CACHE_DIR/$FNAME" ]; then
+            if download_asset 8 "$CACHE_DIR/$FNAME.tmp" "$FURL"; then
+                mv "$CACHE_DIR/$FNAME.tmp" "$CACHE_DIR/$FNAME"
+                echo "$FHASH" > "$CACHE_DIR/$FNAME.hash"
+                ANY_CHANGED=1
+            else
+                SYNC_FAILED=1
             fi
         fi
     done
     IFS="$OLD_IFS"
 
-    [ "$COUNT" -gt 0 ] && PAGE_COUNT="$COUNT"
+    # 任一页无效或下载失败时保留旧看板，不用残缺的新文件集替换。
+    if [ "$SYNC_FAILED" = "1" ] || [ "$COUNT" -eq 0 ]; then
+        return 1
+    fi
+    for FNAME in $VALID_FILES; do
+        if [ ! -s "$CACHE_DIR/$FNAME" ]; then
+            return 1
+        fi
+    done
+    PAGE_COUNT="$COUNT"
 
     # 若刚从紧急通知恢复，触发同步
     if [ "$LAST_ALERT_ACTIVE" = "true" ]; then

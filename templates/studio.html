@@ -514,8 +514,8 @@
             <span class="text-[11px] text-slate-400">USB-Net / Wi-Fi 长轮询推送</span>
           </div>
           <div class="grid grid-cols-2 gap-2">
-            <button type="button" onclick="flipScreen180()" class="bg-slate-50 hover:bg-slate-100 border border-slate-200 p-2.5 rounded-xl text-left transition">
-              <span class="block text-xs font-bold text-slate-800 mb-0.5">🔄 翻转屏幕 180°</span>
+            <button id="btnFlip180" type="button" onclick="flipScreen180()" class="bg-slate-50 hover:bg-slate-100 border border-slate-200 p-2.5 rounded-xl text-left transition">
+              <span id="rotationStatusText" class="block text-xs font-bold text-slate-800 mb-0.5">🔄 翻转屏幕 180°</span>
               <span class="block text-[10px] text-slate-500">倒置或换支架方向时一键翻转</span>
             </button>
             <a href="/kiosk" target="_blank" class="bg-slate-50 hover:bg-slate-100 border border-slate-200 p-2.5 rounded-xl text-left transition block">
@@ -546,43 +546,43 @@
         name: "2|1 左二右一",
         gridClass: "grid grid-cols-2 gap-2.5",
         slots: [
-          { id: "top_left", label: "左上卡片", size: "382×282 象限槽", type: "quadrant", cellClass: "col-span-1" },
-          { id: "right", label: "右侧全高卡片", size: "382×580 全高槽", type: "half_v", cellClass: "col-span-1 row-span-2 flex flex-col justify-between" },
-          { id: "bottom_left", label: "左下卡片", size: "382×282 象限槽", type: "quadrant", cellClass: "col-span-1" }
+          { id: "top_left", label: "左上卡片", size: "368×264.5 象限槽", type: "quadrant", cellClass: "col-span-1" },
+          { id: "right", label: "右侧全高卡片", size: "368×537 全高槽", type: "half_v", cellClass: "col-span-1 row-span-2 flex flex-col justify-between" },
+          { id: "bottom_left", label: "左下卡片", size: "368×264.5 象限槽", type: "quadrant", cellClass: "col-span-1" }
         ]
       },
       "1_2": {
         name: "1|2 左一右二",
         gridClass: "grid grid-cols-2 gap-2.5",
         slots: [
-          { id: "left", label: "左侧全高卡片", size: "382×580 全高槽", type: "half_v", cellClass: "col-span-1 row-span-2 flex flex-col justify-between" },
-          { id: "top_right", label: "右上卡片", size: "382×282 象限槽", type: "quadrant", cellClass: "col-span-1" },
-          { id: "bottom_right", label: "右下卡片", size: "382×282 象限槽", type: "quadrant", cellClass: "col-span-1" }
+          { id: "left", label: "左侧全高卡片", size: "368×537 全高槽", type: "half_v", cellClass: "col-span-1 row-span-2 flex flex-col justify-between" },
+          { id: "top_right", label: "右上卡片", size: "368×264.5 象限槽", type: "quadrant", cellClass: "col-span-1" },
+          { id: "bottom_right", label: "右下卡片", size: "368×264.5 象限槽", type: "quadrant", cellClass: "col-span-1" }
         ]
       },
       "2x2": {
         name: "2×2 对称四象限",
         gridClass: "grid grid-cols-2 gap-2.5",
         slots: [
-          { id: "top_left", label: "左上卡片", size: "382×282 象限槽", type: "quadrant", cellClass: "col-span-1" },
-          { id: "top_right", label: "右上卡片", size: "382×282 象限槽", type: "quadrant", cellClass: "col-span-1" },
-          { id: "bottom_left", label: "左下卡片", size: "382×282 象限槽", type: "quadrant", cellClass: "col-span-1" },
-          { id: "bottom_right", label: "右下卡片", size: "382×282 象限槽", type: "quadrant", cellClass: "col-span-1" }
+          { id: "top_left", label: "左上卡片", size: "368×264.5 象限槽", type: "quadrant", cellClass: "col-span-1" },
+          { id: "top_right", label: "右上卡片", size: "368×264.5 象限槽", type: "quadrant", cellClass: "col-span-1" },
+          { id: "bottom_left", label: "左下卡片", size: "368×264.5 象限槽", type: "quadrant", cellClass: "col-span-1" },
+          { id: "bottom_right", label: "右下卡片", size: "368×264.5 象限槽", type: "quadrant", cellClass: "col-span-1" }
         ]
       },
       "1x2": {
         name: "1×2 左右双栏",
         gridClass: "grid grid-cols-2 gap-2.5",
         slots: [
-          { id: "left", label: "左半屏全高卡片", size: "382×580 全高槽", type: "half_v", cellClass: "col-span-1 py-4" },
-          { id: "right", label: "右半屏全高卡片", size: "382×580 全高槽", type: "half_v", cellClass: "col-span-1 py-4" }
+          { id: "left", label: "左半屏全高卡片", size: "368×537 全高槽", type: "half_v", cellClass: "col-span-1 py-4" },
+          { id: "right", label: "右半屏全高卡片", size: "368×537 全高槽", type: "half_v", cellClass: "col-span-1 py-4" }
         ]
       },
       "1x1": {
         name: "1×1 全屏单卡",
         gridClass: "grid grid-cols-1 gap-2.5",
         slots: [
-          { id: "full", label: "全屏单卡画布", size: "780×580 全屏槽", type: "full", cellClass: "col-span-1 py-4" }
+          { id: "full", label: "全屏单卡画布", size: "744×537 全屏槽", type: "full", cellClass: "col-span-1 py-4" }
         ]
       }
     };
@@ -602,9 +602,9 @@
       full: [
         { id: "focus",    name: "📰 [内置] 综合焦点大画报", desc: "左日历与天气 | 右待办清单 | 底7日周历" },
         { id: "alert",    name: "🔔 [内置] 大字通知 / 备忘录", desc: "全屏大字标题 + 多行正文备忘或紧急通知" },
-        { id: "calendar", name: "📅 [内置] 全屏日历与月历矩阵", desc: "780×580 全宽公历、农历与当月日历表" },
-        { id: "weather",  name: "🌤️ [内置] 全屏气象与3天趋势", desc: "780×580 全宽实时天气与未来3天趋势" },
-        { id: "todo",     name: "☑️ [内置] 全屏待办事项清单", desc: "780×580 全宽展示待办清单与完成进度" }
+        { id: "calendar", name: "📅 [内置] 全屏日历与月历矩阵", desc: "744×537 全宽公历、农历与当月日历表" },
+        { id: "weather",  name: "🌤️ [内置] 全屏气象与3天趋势", desc: "744×537 全宽实时天气与未来3天趋势" },
+        { id: "todo",     name: "☑️ [内置] 全屏待办事项清单", desc: "744×537 全宽展示待办清单与完成进度" }
       ]
     };
 
@@ -719,7 +719,7 @@
         tab.innerHTML = `
           <button type="button" onclick="selectDashboardPage(${idx})" class="px-3 py-1.5 flex items-center space-x-1.5">
             <span>📄 第 ${idx + 1} 页</span>
-            <span class="text-[10px] opacity-75 font-mono">(${p.template.replace('_', '|')})</span>
+            <span class="text-[10px] opacity-75 font-mono">(${escHtml(p.template.replace('_', '|'))})</span>
           </button>
           ${dashboardPages.length > 1 ? `
             <button type="button" onclick="removeDashboardPage(${idx})" title="删除此页" class="pr-2.5 pl-0.5 py-1.5 opacity-60 hover:opacity-100 text-xs">×</button>
@@ -747,11 +747,19 @@
       updatePreview();
     }
 
+    function createDashboardPageId() {
+      let pageId;
+      do {
+        pageId = `page_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      } while (dashboardPages.some(p => p.id === pageId));
+      return pageId;
+    }
+
     function addDashboardPage() {
       const nextNum = dashboardPages.length + 1;
       const defaultRight = enabledPluginIds.includes('agenda') ? 'agenda' : 'todo';
       dashboardPages.push({
-        id: `page_${nextNum}`,
+        id: createDashboardPageId(),
         title: `第 ${nextNum} 页 · 扩展页`,
         template: "1_2",
         slots: { left: "calendar", top_right: "weather", bottom_right: defaultRight },
@@ -764,6 +772,13 @@
 
     function removeDashboardPage(idx) {
       if (dashboardPages.length <= 1) return;
+      const removedId = dashboardPages[idx].id;
+      const referencedBy = (scheduleConfig.rules || []).find(r => (r.pages || []).includes(removedId));
+      if (referencedBy) {
+        showToast(`请先在时段「${referencedBy.name}」中取消引用 ${removedId}，再删除页面`, true);
+        switchSettingsTab('schedule');
+        return;
+      }
       dashboardPages.splice(idx, 1);
       if (activePageIndex >= dashboardPages.length) {
         activePageIndex = dashboardPages.length - 1;
@@ -773,13 +788,19 @@
       showToast(`✓ 已删除页面，当前共 ${dashboardPages.length} 页`);
     }
 
-    async function persistPagesConfig() {
-      const cleanPages = dashboardPages.map((p, i) => ({
-        id: `page_${i + 1}`,
+    function serializeDashboardPages() {
+      return dashboardPages.map((p, i) => ({
+        id: p.id,
         title: `第 ${i + 1} 页`,
         template: p.template,
         slots: p.slots
       }));
+    }
+
+    async function persistPagesConfig() {
+      const cleanPages = serializeDashboardPages();
+      schedulePageIds = cleanPages.map(p => p.id);
+      renderSchedule();
       await fetch('/api/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -796,13 +817,22 @@
         item.className = `flex items-center justify-between p-2 rounded-lg border text-xs ${
           isEnabled ? 'bg-indigo-50/70 border-indigo-300 text-indigo-950' : 'bg-slate-50 border-slate-200 text-slate-500'
         }`;
-        item.innerHTML = `
-          <div class="truncate pr-1.5">
-            <span class="font-bold block truncate">${cat.name}</span>
-            <span class="text-[10px] opacity-75">[${cat.tier}] ${isEnabled ? '已加载' : '未启用'}</span>
-          </div>
-          <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleExternalPlugin('${cat.id}', this.checked)" class="w-4 h-4 rounded text-indigo-600 focus:ring-0 cursor-pointer shrink-0">
-        `;
+        const textBox = document.createElement('div');
+        textBox.className = 'truncate pr-1.5';
+        const nameEl = document.createElement('span');
+        nameEl.className = 'font-bold block truncate';
+        nameEl.textContent = cat.name;
+        const stateEl = document.createElement('span');
+        stateEl.className = 'text-[10px] opacity-75';
+        stateEl.textContent = `[${cat.tier}] ${isEnabled ? '已加载' : '未启用'}`;
+        textBox.append(nameEl, stateEl);
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = isEnabled;
+        checkbox.className = 'w-4 h-4 rounded text-indigo-600 focus:ring-0 cursor-pointer shrink-0';
+        checkbox.addEventListener('change', () => toggleExternalPlugin(cat.id, checkbox.checked));
+        item.append(textBox, checkbox);
         box.appendChild(item);
       });
     }
@@ -907,11 +937,11 @@
             </div>
             <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">选择数据源内容</label>
             <select class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs rounded-lg p-2 font-bold focus:ring-2 focus:ring-slate-900" onchange="onSlotChange('${s.id}', this.value)">
-              ${options.map(opt => `<option value="${opt.id}" ${page.slots[s.id] === opt.id ? 'selected' : ''}>${opt.name}</option>`).join('')}
+              ${options.map(opt => `<option value="${escapeAttr(opt.id)}" ${page.slots[s.id] === opt.id ? 'selected' : ''}>${escHtml(opt.name)}</option>`).join('')}
             </select>
           </div>
           <div class="mt-2 pt-1.5 border-t border-slate-100 text-[11px] text-slate-500 leading-snug">
-            展示内容：${selectedOpt.desc}
+            展示内容：${escHtml(selectedOpt.desc)}
           </div>
         `;
         grid.appendChild(card);
@@ -986,7 +1016,16 @@
       alertDebounceTimer = setTimeout(() => updatePreview(), 180);
     }
 
+    let previewAbortController = null;
+    let previewRequestSeq = 0;
+    let previewObjectUrl = null;
+
     async function updatePreview() {
+      const requestSeq = ++previewRequestSeq;
+      if (previewAbortController) previewAbortController.abort();
+      const controller = new AbortController();
+      previewAbortController = controller;
+
       const t0 = performance.now();
       const ph = document.getElementById('previewPlaceholder');
       const img = document.getElementById('previewImg');
@@ -1009,16 +1048,24 @@
       try {
         const resp = await fetch('/api/preview_generate', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify(payload),
+          signal: controller.signal
         });
+        if (requestSeq !== previewRequestSeq) return;
 
         if (resp.ok) {
           const blob = await resp.blob();
+          if (requestSeq !== previewRequestSeq) return;
+
           const t1 = performance.now();
           document.getElementById('renderTime').textContent = `${Math.round(t1 - t0)} ms`;
           document.getElementById('fileSize').textContent = `${(blob.size / 1024).toFixed(1)} KB`;
-          img.src = URL.createObjectURL(blob);
+          const nextObjectUrl = URL.createObjectURL(blob);
+          const previousObjectUrl = previewObjectUrl;
+          previewObjectUrl = nextObjectUrl;
+          img.src = nextObjectUrl;
+          if (previousObjectUrl) URL.revokeObjectURL(previousObjectUrl);
           ph.classList.add('hidden');
           img.classList.remove('hidden');
         } else {
@@ -1027,11 +1074,18 @@
           ph.textContent = `预览渲染失败 (HTTP ${resp.status})`;
         }
       } catch (err) {
+        if (requestSeq !== previewRequestSeq || err.name === 'AbortError') return;
         ph.classList.remove('hidden');
         img.classList.add('hidden');
         ph.textContent = `预览渲染失败: ${err}`;
+      } finally {
+        if (requestSeq === previewRequestSeq) previewAbortController = null;
       }
     }
+
+    window.addEventListener('beforeunload', () => {
+      if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+    });
 
     async function onDisplayModeChange() {
       const modeSel = document.getElementById('displayModeSelect');
@@ -1064,12 +1118,7 @@
       const mode = modeSel ? modeSel.value : 'carousel';
       const carousel_interval_sec = intSel ? (parseInt(intSel.value) || 60) : 60;
 
-      const cleanPages = dashboardPages.map((p, i) => ({
-        id: `page_${i + 1}`,
-        title: `第 ${i + 1} 页`,
-        template: p.template,
-        slots: p.slots
-      }));
+      const cleanPages = serializeDashboardPages();
 
       try {
         const resp = await fetch('/api/push_live', {
@@ -1096,7 +1145,10 @@
           data = await resp.json();
         } catch {}
         if (resp.ok && data.status === 'ok') {
-          showToast(`✓ 已发布全部 ${data.page_count || cleanPages.length} 页看板 (${data.size_kb} KB)`);
+          const totalPageCount = data.total_page_count ?? cleanPages.length;
+          const activePageCount = data.page_count ?? totalPageCount;
+          const ruleName = data.rule_name || '默认规则';
+          showToast(`✓ 已保存全部 ${totalPageCount} 页；当前时段「${ruleName}」发布 ${activePageCount} 页 (${data.size_kb} KB)`);
           refreshDeviceStatus();
         } else {
           showToast(`! 发布失败: ${data.detail || data.message || ('HTTP ' + resp.status)}`, true);
@@ -1117,9 +1169,9 @@
         const row = document.createElement('div');
         row.className = "flex items-center space-x-1.5 bg-white p-1.5 rounded-lg border border-indigo-100";
         row.innerHTML = `
-          <input type="text" value="${it.title || ''}" placeholder="日程或纪念日名称" onchange="currentAgendaItems[${idx}].title=this.value" class="flex-1 bg-slate-50 border border-slate-300 text-xs rounded px-2 py-1 font-medium">
-          <input type="text" value="${it.date || '+0'}" placeholder="日期(+N/MM-DD)" onchange="currentAgendaItems[${idx}].date=this.value" class="w-24 bg-slate-50 border border-slate-300 text-xs rounded px-1.5 py-1 font-mono text-center">
-          <input type="text" value="${it.time || '全天'}" placeholder="时间" onchange="currentAgendaItems[${idx}].time=this.value" class="w-14 bg-slate-50 border border-slate-300 text-xs rounded px-1 py-1 font-mono text-center">
+          <input type="text" value="${escapeAttr(it.title || '')}" placeholder="日程或纪念日名称" onchange="currentAgendaItems[${idx}].title=this.value" class="flex-1 bg-slate-50 border border-slate-300 text-xs rounded px-2 py-1 font-medium">
+          <input type="text" value="${escapeAttr(it.date || '+0')}" placeholder="日期(+N/MM-DD)" onchange="currentAgendaItems[${idx}].date=this.value" class="w-24 bg-slate-50 border border-slate-300 text-xs rounded px-1.5 py-1 font-mono text-center">
+          <input type="text" value="${escapeAttr(it.time || '全天')}" placeholder="时间" onchange="currentAgendaItems[${idx}].time=this.value" class="w-14 bg-slate-50 border border-slate-300 text-xs rounded px-1 py-1 font-mono text-center">
           <label class="flex items-center space-x-0.5 text-[10px] text-indigo-800 font-bold cursor-pointer shrink-0" title="设为顶部重点倒数日">
             <input type="checkbox" ${it.is_countdown ? 'checked' : ''} onchange="currentAgendaItems[${idx}].is_countdown=this.checked" class="rounded text-indigo-600">
             <span>★倒数</span>
@@ -1295,10 +1347,16 @@
           discoveredHaSensors = res.entities;
           renderDiscoveredSensors(discoveredHaSensors);
         } else {
-          listEl.innerHTML = `<div class="text-xs text-rose-500 py-2 text-center">获取实体失败: ${res.error || '请先确认 HA 连接配置与网络'}</div>`;
+          const errorEl = document.createElement('div');
+          errorEl.className = 'text-xs text-rose-500 py-2 text-center';
+          errorEl.textContent = `获取实体失败: ${res.error || '请先确认 HA 连接配置与网络'}`;
+          listEl.replaceChildren(errorEl);
         }
       } catch (err) {
-        listEl.innerHTML = `<div class="text-xs text-rose-500 py-2 text-center">网络请求失败: ${err.message}</div>`;
+        const errorEl = document.createElement('div');
+        errorEl.className = 'text-xs text-rose-500 py-2 text-center';
+        errorEl.textContent = `网络请求失败: ${err.message}`;
+        listEl.replaceChildren(errorEl);
       }
     }
 
@@ -1446,11 +1504,16 @@
         row.className = "flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs";
         row.innerHTML = `
           <label class="flex items-center space-x-2 cursor-pointer flex-1 truncate pr-2">
-            <input type="checkbox" ${it.done ? 'checked' : ''} onchange="toggleTodo(${it.id})" class="rounded border-slate-400 text-slate-900 focus:ring-0">
-            <span class="${it.done ? 'line-through text-slate-400' : 'font-medium text-slate-800'} truncate">${idx + 1}. ${it.text}</span>
+            <input type="checkbox" class="rounded border-slate-400 text-slate-900 focus:ring-0">
+            <span class="${it.done ? 'line-through text-slate-400' : 'font-medium text-slate-800'} truncate"></span>
           </label>
-          <button onclick="deleteTodo(${it.id})" class="text-slate-400 hover:text-rose-600 font-bold px-1">×</button>
+          <button type="button" class="text-slate-400 hover:text-rose-600 font-bold px-1">×</button>
         `;
+        const checkbox = row.querySelector('input');
+        checkbox.checked = !!it.done;
+        checkbox.addEventListener('change', () => toggleTodo(it.id));
+        row.querySelector('span').textContent = `${idx + 1}. ${it.text ?? ''}`;
+        row.querySelector('button').addEventListener('click', () => deleteTodo(it.id));
         box.appendChild(row);
       });
     }
@@ -1515,7 +1578,7 @@
       const dot = document.getElementById('deviceDot');
       const txt = document.getElementById('deviceStatusText');
       try {
-        const resp = await fetch('/api/device_status');
+        const resp = await fetch('/api/device_status', { headers: authHeaders() });
         const data = await resp.json();
         if (data.auth_required) {
           const det = document.getElementById('apiTokenDetails');
@@ -1550,14 +1613,14 @@
         const res = await resp.json();
         if (res.status === 'ok') {
           showToast(`已旋转 180° (当前角度: ${res.rotation}°)`, false);
-          if (label) label.textContent = `旋转 180° (${res.rotation}°)`;
+          if (label) label.textContent = `🔄 翻转屏幕 180° (${res.rotation}°)`;
         } else {
           showToast(res.message || '旋转失败', true);
-          if (label) label.textContent = '旋转 180°';
+          if (label) label.textContent = '🔄 翻转屏幕 180°';
         }
       } catch (err) {
         showToast('请求失败: ' + err.message, true);
-        if (label) label.textContent = '旋转 180°';
+        if (label) label.textContent = '🔄 翻转屏幕 180°';
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1578,7 +1641,7 @@
       setPreviewMode('alert');
 
       try {
-        const resp = await fetch('/api/alert/push', {
+        const resp = await fetch('/api/studio/alert/push', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...authHeaders() },
           body: JSON.stringify({ title, text, sender, duration })
@@ -1597,7 +1660,7 @@
     async function dismissAlert() {
       setPreviewMode('dashboard');
       try {
-        const resp = await fetch('/api/alert/dismiss', { method: 'POST', headers: authHeaders() });
+        const resp = await fetch('/api/studio/alert/dismiss', { method: 'POST', headers: authHeaders() });
         const data = await resp.json();
         showToast(`✓ ${data.message}`);
       } catch (err) {
@@ -1642,7 +1705,7 @@
         const isDnd = r.mode === 'sleep_dnd';
         const pageChecks = schedulePageIds.map(pid => `
           <label class="inline-flex items-center space-x-0.5 mr-1.5">
-            <input type="checkbox" ${(r.pages || []).includes(pid) ? 'checked' : ''} onchange="toggleRulePage(${idx}, '${escHtml(pid)}', this.checked)">
+            <input type="checkbox" class="rule-page-checkbox" data-page-id="${escapeAttr(pid)}" ${(r.pages || []).includes(pid) ? 'checked' : ''}>
             <span>${escHtml(pid)}</span>
           </label>`).join('');
         const row = document.createElement('div');
@@ -1664,9 +1727,12 @@
                  <span class="text-slate-500">展示页面:</span>${pageChecks || '<span class="text-slate-400">（无页面）</span>'}
                  <span class="text-slate-400">（不勾选=全部）</span>
                  <span class="ml-auto text-slate-500">轮播间隔(秒):</span>
-                 <input type="number" min="10" value="${r.carousel_interval_sec || 60}" onchange="updateRule(${idx}, 'carousel_interval_sec', parseInt(this.value) || 60)" class="w-16 border border-slate-300 rounded px-1 py-0.5 font-mono">
+                 <input type="number" min="10" value="${escapeAttr(r.carousel_interval_sec || 60)}" onchange="updateRule(${idx}, 'carousel_interval_sec', parseInt(this.value) || 60)" class="w-16 border border-slate-300 rounded px-1 py-0.5 font-mono">
                </div>`}
         `;
+        row.querySelectorAll('.rule-page-checkbox').forEach(input => {
+          input.addEventListener('change', () => toggleRulePage(idx, input.dataset.pageId, input.checked));
+        });
         box.appendChild(row);
       });
     }
@@ -1777,6 +1843,11 @@
           scheduleConfig = cfg.schedule || scheduleConfig;
           schedulePageIds = ((cfg.dashboard && cfg.dashboard.pages) || []).map(p => p.id);
           renderSchedule(cfg.schedule_status);
+
+          if (cfg.device && cfg.device.rotation !== undefined) {
+            const rotLabel = document.getElementById('rotationStatusText');
+            if (rotLabel) rotLabel.textContent = `🔄 翻转屏幕 180° (${cfg.device.rotation}°)`;
+          }
 
           if (cfg.dashboard) {
             const modeSel = document.getElementById('displayModeSelect');

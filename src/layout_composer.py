@@ -98,21 +98,23 @@ class LayoutComposer:
     def __init__(self, profile: DeviceProfile = None):
         self.profile = profile or get_profile("n516")
 
-    def get_template_slots(self, template_id: str, pad: float = 10.0, gap: float = 8.0) -> List[Dict[str, Any]]:
+    def get_template_slots(self, template_id: str, pad: float = 28.0, gap: float = 8.0) -> List[Dict[str, Any]]:
         """
         Calculates bounding boxes for slots in the 800x600 logical canvas.
+        N516 cards keep at least 28px side margins and 35px bottom clearance.
         Returns list of {'id': slot_id, 'type': slot_type, 'x': x, 'y': y, 'w': w, 'h': h}
         """
         W = self.profile.width
         H = self.profile.height
+        bottom = max(35.0, pad)
 
         col_w = (W - pad * 2 - gap) / 2
-        col_h = H - pad * 2
-        half_h = (H - pad * 2 - gap) / 2
+        col_h = H - pad - bottom
+        half_h = (H - pad - bottom - gap) / 2
 
         if template_id == "1x1":
             return [
-                {"id": "full", "type": "full", "x": pad, "y": pad, "w": W - pad * 2, "h": H - pad * 2}
+                {"id": "full", "type": "full", "x": pad, "y": pad, "w": W - pad * 2, "h": col_h}
             ]
         elif template_id == "1x2":
             return [

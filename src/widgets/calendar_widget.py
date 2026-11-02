@@ -80,8 +80,9 @@ class CalendarWidget(WidgetBase):
             draw_pango_text(cr, f"农历  {lunar_str}", rx, hero_y - 1, 16, bold=True, color=INK_BLACK, max_width=max_rw)
             draw_pango_text(cr, f"岁次  {ganzhi_str}", rx, hero_y + 25, 13, bold=False, color=INK_BLACK, max_width=max_rw)
 
-            week_num = datetime.date(year, month, day).isocalendar()[1]
-            days_left = 365 - datetime.date(year, month, day).timetuple().tm_yday
+            today_dt = datetime.date(year, month, day)
+            week_num = today_dt.isocalendar()[1]
+            days_left = (datetime.date(year + 1, 1, 1) - today_dt).days
             if term:
                 draw_pango_text(cr, f"节气 · {term}  ·  第 {week_num} 周", rx, hero_y + 49, 12, bold=True, color=INK_BLACK, max_width=max_rw)
             else:

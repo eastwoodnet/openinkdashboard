@@ -9,16 +9,86 @@ Supports:
 """
 
 import datetime
+import http.client
 import os
 import re
+import socket
+import ssl
 import time
-import urllib.request
+import urllib.parse
 from typing import Dict, Any, List, Optional, Set, Tuple
-from config import validate_external_url, mask_url_for_log
+from config import resolve_external_url, mask_url_for_log
 
 _ics_cache: Dict[str, Tuple[float, str]] = {}
 ICS_CACHE_TTL = 900  # 15 minutes cache for remote ICS URLs
 MAX_ICS_BYTES = 2 * 1024 * 1024  # 2MB safety cap
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    """连接到已校验 IP，Host 仍使用原始主机名。"""
+    def __init__(self, host: str, port: int, connect_ip: str, timeout: float):
+        super().__init__(host, port=port, timeout=timeout)
+        self.connect_ip = connect_ip
+
+    def connect(self):
+        self.sock = socket.create_connection((self.connect_ip, self.port), self.timeout)
+
+
+class _PinnedHTTPSConnection(_PinnedHTTPConnection):
+    """固定连接 IP，同时按原始域名执行 CA 和 SNI/主机名验证。"""
+    def connect(self):
+        super().connect()
+        self.sock = ssl.create_default_context().wrap_socket(self.sock, server_hostname=self.host)
+
+
+def _request_pinned_once(safe_url: str, addresses: List[str], timeout: float):
+    """仅在同一批已校验地址内故障转移，不因重试重新解析 DNS。"""
+    parsed = urllib.parse.urlsplit(safe_url)
+    host = parsed.hostname or ""
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    conn_cls = _PinnedHTTPSConnection if parsed.scheme == "https" else _PinnedHTTPConnection
+    last_error = None
+    for address in addresses:
+        conn = conn_cls(host, port, address, timeout)
+        try:
+            target = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+            conn.putrequest("GET", target, skip_host=True, skip_accept_encoding=True)
+            conn.putheader("Host", parsed.netloc)
+            conn.putheader("User-Agent", "OpenInk-CalendarSync/1.2")
+            conn.putheader("Accept", "text/calendar, text/plain, application/octet-stream")
+            conn.endheaders()
+            resp = conn.getresponse()
+            if resp.status in (301, 302, 303, 307, 308):
+                location = resp.getheader("Location")
+                if not location:
+                    raise ValueError("Redirect without Location")
+                return resp.status, location, b""
+            if resp.status != 200:
+                raise ValueError(f"ICS HTTP {resp.status}")
+            body = resp.read(MAX_ICS_BYTES + 1)
+            if len(body) > MAX_ICS_BYTES:
+                raise ValueError("ICS response too large")
+            return resp.status, "", body
+        except (OSError, http.client.HTTPException) as exc:
+            last_error = exc
+        finally:
+            conn.close()
+    raise last_error or OSError("ICS connection failed")
+
+
+def _fetch_remote_pinned(url: str, timeout: float = 5, max_redirects: int = 3) -> bytes:
+    """每次请求只解析一次 DNS，并固定实际连接 IP，阻断 DNS Rebinding 与危险重定向。"""
+    current = url
+    for _ in range(max_redirects + 1):
+        safe_url, addresses = resolve_external_url(current)
+        if not safe_url:
+            raise ValueError("Blocked unsafe URL")
+        status, location, body = _request_pinned_once(safe_url, addresses, timeout)
+        if status in (301, 302, 303, 307, 308):
+            current = urllib.parse.urljoin(safe_url, location)
+            continue
+        return body
+    raise ValueError("Too many ICS redirects")
 
 
 def _unfold_ics_lines(raw_text: str) -> List[str]:
@@ -112,10 +182,9 @@ def _apply_rrule_to_today(
                 results.append(cur)
             cur += datetime.timedelta(days=7)
     elif "FREQ=DAILY" in rule_upper:
-        for d_off in range(0, min(14, horizon_days + 1)):
-            cur = today + datetime.timedelta(days=d_off)
-            if cur >= start_date:
-                results.append(cur)
+        first_offset = max(0, (start_date - today).days)
+        for d_off in range(first_offset, horizon_days + 1):
+            results.append(today + datetime.timedelta(days=d_off))
 
     return results
 
@@ -176,8 +245,8 @@ def parse_ics_content(raw_ics: str, today: Optional[datetime.date] = None, horiz
     return events
 
 
-def _fetch_ics_url(url: str, force_refresh: bool = False) -> str:
-    """Fetches an .ics URL (or local file path) with TTL caching."""
+def _fetch_ics_url(url: str, force_refresh: bool = False, allow_local: bool = False) -> str:
+    """Fetches a remote ICS feed; local files require an explicit administrator opt-in."""
     clean_url = url.strip()
     if not clean_url:
         return ""
@@ -192,19 +261,13 @@ def _fetch_ics_url(url: str, force_refresh: bool = False) -> str:
 
     try:
         if clean_url.startswith(("http://", "https://")):
-            safe_url = validate_external_url(clean_url)
-            if not safe_url:
-                print(f"[ICS Plugin Warning] Blocked unsafe or invalid URL: {mask_url_for_log(clean_url)}")
-                return ""
-            req = urllib.request.Request(
-                safe_url,
-                headers={"User-Agent": "OpenInk-CalendarSync/1.2"}
-            )
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                body = resp.read(MAX_ICS_BYTES).decode("utf-8", errors="replace")
-        elif clean_url.endswith(".ics") and os.path.isfile(clean_url) and not os.path.islink(clean_url):
+            raw_body = _fetch_remote_pinned(clean_url)
+            body = raw_body.decode("utf-8", errors="replace")
+        elif allow_local and clean_url.endswith(".ics") and os.path.isfile(clean_url) and not os.path.islink(clean_url):
             with open(clean_url, "r", encoding="utf-8") as f:
-                body = f.read(MAX_ICS_BYTES)
+                body = f.read(MAX_ICS_BYTES + 1)
+                if len(body) > MAX_ICS_BYTES:
+                    raise ValueError("ICS file too large")
         else:
             return ""
         _ics_cache[clean_url] = (now, body)
@@ -253,8 +316,9 @@ def fetch_agenda_data(plugin_cfg: Dict[str, Any], today: Optional[datetime.date]
     all_events: List[Dict[str, Any]] = []
 
     # 1. Parse remote/local .ics feeds
+    allow_local = bool(plugin_cfg.get("allow_local_files", False))
     for url in ics_urls:
-        raw_ics = _fetch_ics_url(url, force_refresh=force_refresh)
+        raw_ics = _fetch_ics_url(url, force_refresh=force_refresh, allow_local=allow_local)
         if raw_ics:
             all_events.extend(parse_ics_content(raw_ics, today=today))
 
@@ -287,7 +351,8 @@ def fetch_agenda_data(plugin_cfg: Dict[str, Any], today: Optional[datetime.date]
                 pass
 
         if target_date is None:
-            target_date = today
+            # 无效输入不能静默变成“今天”的虚假日程。
+            continue
 
         days_away = (target_date - today).days
         all_events.append({

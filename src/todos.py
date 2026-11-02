@@ -4,7 +4,21 @@ Reads, modifies, and parses plain text / markdown todo list files.
 """
 
 import os
+import threading
+from functools import wraps
 from typing import List, Dict
+
+
+_TODOS_LOCK = threading.RLock()
+
+
+def _serialized(func):
+    """串行化同一进程内的读改写事务，避免并发请求覆盖待办。"""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        with _TODOS_LOCK:
+            return func(*args, **kwargs)
+    return wrapper
 
 
 def read_raw_lines(filepath: str) -> List[str]:
@@ -15,8 +29,19 @@ def read_raw_lines(filepath: str) -> List[str]:
 
 
 def write_raw_lines(filepath: str, lines: List[str]):
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.writelines(lines)
+    tmp_path = f"{filepath}.{os.getpid()}.{threading.get_ident()}.tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, filepath)
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
 
 def load_todos(filepath: str, max_items: int = 9) -> Dict:
@@ -28,15 +53,7 @@ def load_todos(filepath: str, max_items: int = 9) -> Dict:
       - 普通文本待办
     """
     if not os.path.exists(filepath):
-        return {
-            "items": [
-                {"id": 1, "text": "编辑 todos.txt 或运行 ./todo.py add 添加待办", "done": False},
-                {"id": 2, "text": "支持 ./todo.py done <序号> 标记完成", "done": False},
-            ],
-            "total": 2,
-            "completed": 0,
-            "pending": 2
-        }
+        return {"items": [], "all_items": [], "total": 0, "completed": 0, "pending": 0}
 
     items = []
     item_counter = 1
@@ -49,12 +66,16 @@ def load_todos(filepath: str, max_items: int = 9) -> Dict:
             done = False
             text = stripped
 
-            if stripped.startswith("- [x]") or stripped.startswith("[x]") or stripped.startswith("- [X]") or stripped.startswith("[X]"):
+            if stripped.startswith(("- [x]", "- [X]")):
                 done = True
-                text = stripped.lstrip("- ").replace("[x]", "").replace("[X]", "").strip()
-            elif stripped.startswith("- [ ]") or stripped.startswith("[ ]"):
-                done = False
-                text = stripped.lstrip("- ").replace("[ ]", "").strip()
+                text = stripped[5:].strip()
+            elif stripped.startswith(("[x]", "[X]")):
+                done = True
+                text = stripped[3:].strip()
+            elif stripped.startswith("- [ ]"):
+                text = stripped[5:].strip()
+            elif stripped.startswith("[ ]"):
+                text = stripped[3:].strip()
             elif stripped.startswith("- "):
                 text = stripped[2:].strip()
 
@@ -79,6 +100,7 @@ def load_todos(filepath: str, max_items: int = 9) -> Dict:
     }
 
 
+@_serialized
 def add_todo_item(filepath: str, text: str) -> bool:
     """追加一条新待办"""
     new_line = f"- [ ] {text.strip()}\n"
@@ -95,6 +117,7 @@ def add_todo_item(filepath: str, text: str) -> bool:
     return True
 
 
+@_serialized
 def mark_todo_status(filepath: str, item_id: int, done: bool = True) -> bool:
     """修改指定序号的待办状态"""
     if not os.path.exists(filepath):
@@ -138,6 +161,7 @@ def mark_todo_status(filepath: str, item_id: int, done: bool = True) -> bool:
     return found
 
 
+@_serialized
 def delete_todo_item(filepath: str, item_id: int) -> bool:
     """删除指定序号的待办"""
     if not os.path.exists(filepath):
@@ -167,6 +191,7 @@ def delete_todo_item(filepath: str, item_id: int) -> bool:
     return found
 
 
+@_serialized
 def clear_completed_todos(filepath: str) -> int:
     """清除所有已完成的待办"""
     if not os.path.exists(filepath):

@@ -58,7 +58,7 @@ class AgendaWidget(WidgetBase):
             box_h = 42
             box_w = w - pad_x * 2
             draw_rounded_rect(cr, pad_x, box_y, box_w, box_h, 6)
-            cr.set_source_rgb(0.95, 0.95, 0.95)
+            cr.set_source_rgb(*INK_WHITE)
             cr.fill_preserve()
             cr.set_source_rgb(*INK_BLACK)
             cr.set_line_width(1.4)
@@ -166,7 +166,7 @@ class AgendaWidget(WidgetBase):
             for i in range(2):
                 cy = cd_start_y + i * (cd_card_h + cd_gap)
                 draw_rounded_rect(cr, pad_x, cy, w - pad_x * 2, cd_card_h, 6)
-                cr.set_source_rgb(0.96, 0.96, 0.96)
+                cr.set_source_rgb(*INK_WHITE)
                 cr.fill_preserve()
                 cr.set_source_rgb(*INK_BLACK)
                 cr.set_line_width(1.4)

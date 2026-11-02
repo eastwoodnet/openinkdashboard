@@ -8,7 +8,12 @@
 
 import os
 import json
+import ipaddress
+import re
+import socket
+import threading
 import urllib.parse
+from contextlib import contextmanager
 from typing import Dict, Any, List
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -164,27 +169,80 @@ def mask_url_for_log(url: str) -> str:
     return "<masked-url>"
 
 
-def validate_external_url(raw_url: str, allow_private_lan: bool = False) -> str:
+def _is_blocked_address(address: str, allow_private_lan: bool) -> bool:
+    """判断解析后的 IP 是否可用于外部采集；私网仅对明确的 HA 管理配置开放。"""
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return True
+    if ip.is_unspecified or ip.is_multicast or ip.is_reserved:
+        return True
+    if allow_private_lan:
+        return False
+    # 非公网地址一律拒绝，覆盖 CGNAT、文档段、保留段及各类内部地址。
+    return not ip.is_global
+
+
+def validate_external_url(
+    raw_url: str,
+    allow_private_lan: bool = False,
+    resolve: bool = False,
+) -> str:
     """
-    校验外部请求 URL 协议与目标地址，防范 SSRF 与非法协议读取。
-    - 仅允许 http://, https://, webcal://（自动转为 https://）；
-    - 默认拦截回环地址与云元数据地址（127.0.0.0/8, localhost, 169.254.169.254）。
+    校验采集 URL。默认拒绝私网、回环和链路本地地址；resolve=True 时同时检查全部 DNS 结果。
+    每次重定向都必须重新调用本函数，不能只校验初始 URL。
     """
     clean = (raw_url or "").strip()
     if not clean:
         return ""
     if clean.startswith("webcal://"):
         clean = "https://" + clean[len("webcal://"):]
-    parsed = urllib.parse.urlsplit(clean)
-    if parsed.scheme not in ("http", "https"):
+    try:
+        parsed = urllib.parse.urlsplit(clean)
+        if parsed.scheme not in ("http", "https") or parsed.username or parsed.password:
+            return ""
+        host = (parsed.hostname or "").lower().rstrip(".")
+        if not host or parsed.fragment:
+            return ""
+        port = parsed.port
+    except (ValueError, TypeError):
         return ""
-    host = (parsed.hostname or "").lower()
-    if not host:
-        return ""
-    blocked_hosts = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254", "metadata.google.internal"}
-    if not allow_private_lan and (host in blocked_hosts or host.startswith("127.") or host.startswith("169.254.")):
-        return ""
+
+    if host == "localhost" or host.endswith(".localhost") or host == "metadata.google.internal":
+        if not allow_private_lan:
+            return ""
+    try:
+        ipaddress.ip_address(host)
+        if _is_blocked_address(host, allow_private_lan):
+            return ""
+    except ValueError:
+        pass
+
+    if resolve:
+        return resolve_external_url(clean, allow_private_lan=allow_private_lan)[0]
     return clean
+
+
+def resolve_external_url(raw_url: str, allow_private_lan: bool = False) -> tuple[str, list[str]]:
+    """一次完成 URL 校验和 DNS 解析，供连接层固定使用同一批 IP，避免二次解析。"""
+    clean = validate_external_url(raw_url, allow_private_lan=allow_private_lan, resolve=False)
+    if not clean:
+        return "", []
+    parsed = urllib.parse.urlsplit(clean)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        ipaddress.ip_address(host)
+        addresses = [host]
+    except ValueError:
+        try:
+            infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+            addresses = sorted({info[4][0] for info in infos})
+        except (OSError, ValueError):
+            return "", []
+    if not addresses or any(_is_blocked_address(addr, allow_private_lan) for addr in addresses):
+        return "", []
+    return clean, addresses
 
 
 def normalize_dashboard_pages(cfg: dict) -> List[Dict[str, Any]]:
@@ -233,73 +291,86 @@ def load_config() -> dict:
     return cfg
 
 
+_CONFIG_LOCK = threading.RLock()
+
+
+@contextmanager
+def config_transaction():
+    """串行化跨 config.json 与 .env 的复合写入事务。"""
+    with _CONFIG_LOCK:
+        yield
+
+
+def _atomic_write_text(path: str, content: str):
+    """同目录写入后原子替换，避免并发读取到半截配置或凭据文件。"""
+    tmp_path = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp_path, 0o600)
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
 def save_config(updates: dict) -> dict:
     """将更新项合并写入 config.json 并返回最新配置（递归剥离任何明文密钥）。"""
-    current = load_config()
-    merged = _merge(current, updates)
-    if "dashboard" in merged:
-        pages = normalize_dashboard_pages(merged)
-        merged["dashboard"]["pages"] = pages
-        merged["dashboard"]["template"] = pages[0]["template"]
-        merged["dashboard"]["slots"] = pages[0]["slots"]
-    merged = _strip_plaintext_secrets(merged)
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(merged, f, ensure_ascii=False, indent=2)
-    try:
-        os.chmod(CONFIG_PATH, 0o600)
-    except OSError:
-        pass
-    return merged
+    with _CONFIG_LOCK:
+        current = load_config()
+        merged = _merge(current, updates)
+        if "dashboard" in merged:
+            pages = normalize_dashboard_pages(merged)
+            merged["dashboard"]["pages"] = pages
+            merged["dashboard"]["template"] = pages[0]["template"]
+            merged["dashboard"]["slots"] = pages[0]["slots"]
+        merged = _strip_plaintext_secrets(merged)
+        _atomic_write_text(CONFIG_PATH, json.dumps(merged, ensure_ascii=False, indent=2))
+        return merged
 
 
 def get_secret(section: dict, key: str = "token") -> str:
-    """
-    按 config 中的 `{key}_env` 变量名从环境变量读取密钥。
-    未设置时返回空串。
-    """
+    """仅从 `{key}_env` 指定的环境变量读取凭据，不回退到明文配置。"""
     env_name = section.get(f"{key}_env")
-    if not env_name:
-        return section.get(key, "")
-    return os.environ.get(env_name, "")
+    return os.environ.get(env_name, "") if env_name else ""
 
 
 def save_env_secret(key: str, value: str) -> bool:
-    """
-    安全保存敏感凭据至本地 .env（已受 .gitignore 隔离，绝不入库），
-    设置 0600 权限并实时同步当前 Python 进程环境变量。
-    """
-    if not key or value is None:
+    """原子保存单个环境变量凭据；拒绝非法键名和会注入额外行的值。"""
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key or "") or value is None:
         return False
-    lines = []
-    found = False
-    if os.path.exists(ENV_PATH):
-        try:
-            with open(ENV_PATH, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-        except Exception:
-            lines = []
-    new_lines = []
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith(f"{key}=") or stripped.startswith(f"export {key}="):
+    if "\n" in value or "\r" in value:
+        return False
+    with _CONFIG_LOCK:
+        lines = []
+        found = False
+        if os.path.exists(ENV_PATH):
+            try:
+                with open(ENV_PATH, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+            except OSError:
+                lines = []
+        new_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith(f"{key}=") or stripped.startswith(f"export {key}="):
+                new_lines.append(f"{key}={value}\n")
+                found = True
+            else:
+                new_lines.append(line)
+        if not found:
+            if new_lines and not new_lines[-1].endswith("\n"):
+                new_lines.append("\n")
             new_lines.append(f"{key}={value}\n")
-            found = True
-        else:
-            new_lines.append(line)
-    if not found:
-        if new_lines and not new_lines[-1].endswith("\n"):
-            new_lines.append("\n")
-        new_lines.append(f"{key}={value}\n")
-
-    try:
-        with open(ENV_PATH, "w", encoding="utf-8") as f:
-            f.writelines(new_lines)
         try:
-            os.chmod(ENV_PATH, 0o600)
-        except OSError:
-            pass
-        os.environ[key] = value
-        return True
-    except Exception as e:
-        print(f"[Config Warning] 保存 .env 密钥失败: {e}")
-        return False
+            _atomic_write_text(ENV_PATH, "".join(new_lines))
+            os.environ[key] = value
+            return True
+        except OSError as e:
+            print(f"[Config Warning] 保存 .env 密钥失败: {e}")
+            return False

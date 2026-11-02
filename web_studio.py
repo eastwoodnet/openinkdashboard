@@ -11,11 +11,14 @@ import os
 import io
 import sys
 import time
+import hmac
 import asyncio
 import hashlib
+import ipaddress
+import threading
 from typing import Dict, Any, Optional, List, Set
 from fastapi import FastAPI, HTTPException, Response, Request, Query, Header
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 import uvicorn
 from PIL import Image
@@ -31,6 +34,7 @@ from config import (
     sanitize_for_client,
     validate_external_url,
     save_env_secret,
+    config_transaction,
 )
 from plugins.homeassistant import HomeAssistantClient
 from profiles import get_profile
@@ -51,9 +55,59 @@ from scheduler import evaluate_schedule, filter_pages_for_rule, normalize_schedu
 app = FastAPI(title="OpenInk Studio")
 
 API_TOKEN = os.environ.get("OPENINK_API_TOKEN", "")
-BIND_HOST = os.environ.get("OPENINK_BIND", "0.0.0.0")
+BIND_HOST = os.environ.get("OPENINK_BIND", "127.0.0.1")
 BIND_PORT = int(os.environ.get("OPENINK_PORT", "8080"))
-ASSETS_BASE_DIR = "/tmp/openink_assets"
+ASSETS_BASE_DIR = os.environ.get("OPENINK_ASSETS_DIR", "/tmp/openink_assets")
+# 仅用于隔离设备网段：按来源 IP 豁免设备拉取接口，不接受 device_id 作为免密依据。
+N516_NO_AUTH_IPS = {
+    item.strip()
+    for item in os.environ.get("OPENINK_N516_NO_AUTH_IPS", "").split(",")
+    if item.strip()
+}
+STUDIO_MANAGEMENT_PREFIXES = (
+    "/api/config",
+    "/api/push_live",
+    "/api/preview_generate",
+    "/api/todos",
+    "/api/device",
+    "/api/ha",
+    "/api/schedule",
+    "/api/studio/",
+)
+
+
+def _parse_trusted_networks(raw: str):
+    networks = []
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(item, strict=False))
+        except ValueError:
+            print(f"[Auth Warning] 忽略无效 Studio 可信网段: {item}", flush=True)
+    return tuple(networks)
+
+
+STUDIO_TRUSTED_NETWORKS = _parse_trusted_networks(os.environ.get("OPENINK_STUDIO_TRUSTED_CIDRS", ""))
+
+
+def _is_studio_management_path(path: str) -> bool:
+    return any(
+        path == prefix.rstrip("/") or path.startswith(prefix.rstrip("/") + "/")
+        for prefix in STUDIO_MANAGEMENT_PREFIXES
+    )
+
+
+def _is_trusted_studio_request(path: str, client_ip: str) -> bool:
+    if not client_ip or not _is_studio_management_path(path):
+        return False
+    try:
+        address = ipaddress.ip_address(client_ip)
+        address = getattr(address, "ipv4_mapped", None) or address
+        return any(address in network for network in STUDIO_TRUSTED_NETWORKS)
+    except ValueError:
+        return False
 
 
 def _check_token(
@@ -74,35 +128,89 @@ def _check_token(
     if authorization and authorization.lower().startswith("bearer "):
         bearer = authorization[7:].strip()
     candidate = x_api_token or bearer or query_token or ""
-    if candidate != API_TOKEN:
+    if not hmac.compare_digest(candidate.encode("utf-8"), API_TOKEN.encode("utf-8")):
         raise HTTPException(status_code=401, detail="Invalid or missing API token")
+
+
+@app.middleware("http")
+async def _protect_api_routes(request: Request, call_next):
+    """统一保护 API 与接口文档，避免新增路由遗漏手工鉴权。"""
+    path = request.url.path
+    protected = path.startswith("/api/") or path in ("/docs", "/redoc", "/openapi.json")
+    client = getattr(request, "client", None)
+    client_ip = client.host if client else ""
+    trusted_n516 = path.startswith("/api/v1/") and client_ip in N516_NO_AUTH_IPS
+    trusted_studio = _is_trusted_studio_request(path, client_ip)
+    if (trusted_n516 or trusted_studio) and API_TOKEN:
+        # 路由内部仍有 _check_token；只在已通过来源规则的 scope 内注入内部凭证。
+        headers = [
+            (name, value) for name, value in request.scope.get("headers", [])
+            if name.lower() != b"x-api-token"
+        ]
+        headers.append((b"x-api-token", API_TOKEN.encode("utf-8")))
+        request.scope["headers"] = headers
+
+    if trusted_studio and request.method not in ("GET", "HEAD", "OPTIONS"):
+        # 可信网段只替代网络鉴权，不允许第三方网页借浏览器发起跨站写操作。
+        sec_fetch_site = request.headers.get("sec-fetch-site", "")
+        origin = request.headers.get("origin", "")
+        if (sec_fetch_site and sec_fetch_site != "same-origin") or (
+            origin and origin.rstrip("/") != str(request.base_url).rstrip("/")
+        ):
+            return JSONResponse(status_code=403, content={"detail": "Cross-site Studio request rejected"})
+
+    if API_TOKEN and protected and not (trusted_n516 or trusted_studio):
+        try:
+            _check_token(
+                request.headers.get("x-api-token"),
+                request.headers.get("authorization"),
+                request.query_params.get("token"),
+            )
+        except HTTPException:
+            if path.startswith("/api/v1/"):
+                print(f"[Auth] device request denied: path={path} client={client_ip}", flush=True)
+            return JSONResponse(status_code=401, content={"detail": "Invalid or missing API token"})
+    return await call_next(request)
+
+
+def _validate_bind_security():
+    """非回环监听必须显式配置管理 Token，防止误将免密 Studio 暴露到局域网。可通过 OPENINK_ALLOW_INSECURE_NO_AUTH=1 明确免除。"""
+    if os.environ.get("OPENINK_ALLOW_INSECURE_NO_AUTH") == "1":
+        return
+    if API_TOKEN or BIND_HOST == "localhost":
+        return
+    try:
+        if ipaddress.ip_address(BIND_HOST).is_loopback:
+            return
+    except ValueError:
+        pass
+    raise RuntimeError("非回环监听必须设置 OPENINK_API_TOKEN；若在受信任私有局域网运行可设置 OPENINK_ALLOW_INSECURE_NO_AUTH=1")
 
 
 _cached_context: Optional[Dict[str, Any]] = None
 _last_context_time: float = 0
 _last_city: str = ""
+_context_lock = threading.RLock()
 
 
 def _todos_path() -> str:
     cfg = load_config()
-    return os.path.join(BASE_DIR, cfg.get("todos_file", "todos.txt"))
+    # 待办文件固定为项目根目录内的单个文件名，拒绝绝对路径与 ../ 逃逸。
+    name = os.path.basename(str(cfg.get("todos_file", "todos.txt")))
+    return os.path.join(BASE_DIR, name if name not in ("", ".", "..") else "todos.txt")
 
 
-def get_fresh_context(force_refresh: bool = False, city_override: Optional[str] = None) -> Dict[str, Any]:
+def _get_fresh_context_locked(force_refresh: bool = False, city_override: Optional[str] = None) -> Dict[str, Any]:
     global _cached_context, _last_context_time, _last_city
     now = time.time()
     cfg = load_config()
     city = city_override or cfg.get("city", "Beijing")
 
     td = load_todos(_todos_path(), max_items=50)
-    plugin_ctx = load_enabled_plugins_context(cfg, force_refresh=force_refresh)
 
     if not force_refresh and _cached_context and (now - _last_context_time < 300) and (city == _last_city):
         _cached_context["todos"] = td
         _cached_context["todo"] = td
-        for cat in PLUGIN_CATALOG:
-            _cached_context.pop(cat["id"], None)
-        _cached_context.update(plugin_ctx)
         return _cached_context
 
     cal = get_calendar_info()
@@ -110,13 +218,9 @@ def get_fresh_context(force_refresh: bool = False, city_override: Optional[str] 
         wtr = get_weather(city)
     except Exception:
         wtr = {
-            "city": city,
-            "desc": "晴朗",
-            "temp": "18°C",
-            "feels_like": "17°C",
-            "temp_range": "11°C ~ 20°C",
-            "humidity": "42%",
-            "wind_cn": "东北风 2级"
+            "source": "fallback", "city": city, "desc": "天气不可用",
+            "temp": "--°C", "feels_like": "--°C", "temp_range": "--°C ~ --°C",
+            "humidity": "--%", "wind_cn": "--", "forecast": [], "success": False,
         }
 
     _cached_context = {
@@ -125,10 +229,15 @@ def get_fresh_context(force_refresh: bool = False, city_override: Optional[str] 
         "todos": td,
         "todo": td,
     }
-    _cached_context.update(plugin_ctx)
+    _cached_context.update(load_enabled_plugins_context(cfg, force_refresh=force_refresh))
     _last_context_time = now
     _last_city = city
     return _cached_context
+
+
+def get_fresh_context(force_refresh: bool = False, city_override: Optional[str] = None) -> Dict[str, Any]:
+    with _context_lock:
+        return _get_fresh_context_locked(force_refresh=force_refresh, city_override=city_override)
 
 
 # =========================================================================
@@ -137,7 +246,8 @@ def get_fresh_context(force_refresh: bool = False, city_override: Optional[str] 
 
 class DisplayStateManager:
     def __init__(self):
-        self.version: str = f"v{int(time.time() * 1000)}"
+        self._version_seq = 0
+        self.version: str = f"v{int(time.time() * 1000)}-0"
         self.playlist: List[Dict[str, Any]] = []
         self.active_page_index: int = 0
         self.alert_hash: str = ""
@@ -146,6 +256,7 @@ class DisplayStateManager:
         self.connected_clients: Dict[str, Dict[str, Any]] = {}
         self._waiters: Set[asyncio.Event] = set()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._state_lock = threading.Lock()
 
     def bind_loop(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop
@@ -166,7 +277,9 @@ class DisplayStateManager:
         ]
 
     def notify_all(self):
-        self.version = f"v{int(time.time() * 1000)}"
+        with self._state_lock:
+            self._version_seq += 1
+            self.version = f"v{int(time.time() * 1000)}-{self._version_seq}"
         if self._loop and self._loop.is_running():
             self._loop.call_soon_threadsafe(self._wake_events)
         else:
@@ -195,6 +308,23 @@ class DisplayStateManager:
 display_manager = DisplayStateManager()
 
 
+def _alert_is_active() -> bool:
+    return alert_state.active and not alert_state.is_expired()
+
+
+def _dismiss_alert(notify: bool = True, only_if_expired: bool = False) -> bool:
+    """集中清理 Alert；到期清理与发布共用渲染锁，避免误删刚发布的新通知。"""
+    with _render_lock:
+        if only_if_expired and not (alert_state.active and alert_state.is_expired()):
+            return False
+        changed = alert_state.active or bool(display_manager.alert_hash)
+        alert_state.dismiss()
+        display_manager.alert_hash = ""
+        if changed and notify:
+            display_manager.notify_all()
+        return changed
+
+
 def _file_md5_short(path: str) -> str:
     if not os.path.exists(path):
         return ""
@@ -213,6 +343,28 @@ def _normalize_bucket(bucket: str) -> str:
 def _get_device_rotation() -> int:
     cfg = load_config()
     return int(cfg.get("device", {}).get("rotation", 90))
+
+
+def _atomic_save_png(img: Image.Image, path: str):
+    """
+    先写入同目录临时文件再 os.replace 原子替换，确保终端在任意时刻拉取到的都是完整 PNG，
+    杜绝渲染过程中被下载到半截文件导致的花屏 / 白屏。
+    """
+    tmp_path = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
+    try:
+        img.save(tmp_path, format="PNG", optimize=True)
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
+# 渲染互斥锁：调度线程 (asyncio.to_thread) 与 FastAPI 线程池中的同步接口可能并发触发渲染，
+# 必须串行化，避免同名 PNG 被交叉写入、playlist 与磁盘文件不一致。
+_render_lock = threading.RLock()
 
 
 def _rotate_image_for_device(img_landscape: Image.Image, rotation: Optional[int] = None) -> Image.Image:
@@ -251,8 +403,28 @@ def _render_cached_pages(
     if not pages_data:
         pages_data = normalize_dashboard_pages(cfg)
     sched_state = evaluate_schedule(cfg)
+    total_page_count = len(pages_data)
     if not ignore_schedule_rule:
         pages_data = filter_pages_for_rule(pages_data, sched_state["active_rule"])
+
+    with _render_lock:
+        return _render_pages_locked(
+            cfg, sched_state, pages_data, total_page_count,
+            city_override, active_page_index, force_refresh, rotate_portrait, notify,
+        )
+
+
+def _render_pages_locked(
+    cfg: Dict[str, Any],
+    sched_state: Dict[str, Any],
+    pages_data: List[Dict[str, Any]],
+    total_page_count: int,
+    city_override: Optional[str],
+    active_page_index: int,
+    force_refresh: bool,
+    rotate_portrait: bool,
+    notify: str,
+) -> Dict[str, Any]:
     old_hashes = [(it["filename"], it["hash"]) for it in display_manager.playlist]
 
     portrait_dir = os.path.join(ASSETS_BASE_DIR, "portrait")
@@ -262,6 +434,7 @@ def _render_cached_pages(
 
     composer = LayoutComposer(get_profile("default"))
     context = dict(get_fresh_context(force_refresh=force_refresh, city_override=city_override))
+    rotation = int(cfg.get("device", {}).get("rotation", 90))
 
     playlist: List[Dict[str, Any]] = []
     total_bytes = 0
@@ -274,12 +447,12 @@ def _render_cached_pages(
         portrait_path = os.path.join(portrait_dir, fname)
         landscape_path = os.path.join(landscape_dir, fname)
 
-        img_landscape = composer.render_screen(p["template"], p["slots"], context, output_path=landscape_path, rotate=False)
+        img_landscape = composer.render_screen(p["template"], p["slots"], context, rotate=False)
+        _atomic_save_png(img_landscape, landscape_path)
         if rotate_portrait:
-            img_rotated = _rotate_image_for_device(img_landscape)
-            img_rotated.save(portrait_path, optimize=True)
+            _atomic_save_png(_rotate_image_for_device(img_landscape, rotation), portrait_path)
         else:
-            img_landscape.save(portrait_path, optimize=True)
+            _atomic_save_png(img_landscape, portrait_path)
 
         fsize = os.path.getsize(portrait_path)
         total_bytes += fsize
@@ -311,11 +484,17 @@ def _render_cached_pages(
     if notify == "always" or (notify == "if_changed" and changed):
         display_manager.notify_all()
 
+    # 渲染结果已与当前时段对齐：同步调度器的时段快照，避免 30 秒后调度器误判“时段变化”再次全量重绘、
+    # 导致墨水屏在一次发布后连续闪刷两次。
+    _sync_scheduler_slot(sched_state)
+
     return {
         "ok": True,
         "changed": changed,
         "version": display_manager.version,
         "page_count": len(playlist),
+        "total_page_count": total_page_count,
+        "rule_name": sched_state.get("rule_name", ""),
         "size_kb": round(total_bytes / 1024, 1),
     }
 
@@ -330,6 +509,24 @@ def _ensure_rendered():
 # =========================================================================
 
 SCHEDULER_TICK_SEC = 30
+
+
+def _slot_key_of(st: Dict[str, Any]) -> tuple:
+    return (
+        st["rule_id"], st["mode"], st["carousel_interval_sec"],
+        tuple(p.get("id") for p in st["active_pages"]),
+    )
+
+
+def _sync_scheduler_slot(st: Dict[str, Any]):
+    runner = globals().get("schedule_runner")
+    if runner is not None:
+        import datetime as _dt
+        runner.last_slot_key = _slot_key_of(st)
+        if runner.last_date is None:
+            runner.last_date = _dt.date.today().isoformat()
+        # 手动发布也是一次完整刷新，避免排程器紧接着重复采集和重绘。
+        runner.last_refresh_ts = time.time()
 
 
 class ScheduleRunner:
@@ -358,17 +555,12 @@ class ScheduleRunner:
         now_dt = now_dt or _dt.datetime.now()
         cfg = load_config()
         st = evaluate_schedule(cfg, now=now_dt)
-        slot_key = (
-            st["rule_id"], st["mode"], st["carousel_interval_sec"],
-            tuple(p.get("id") for p in st["active_pages"]),
-        )
+        slot_key = _slot_key_of(st)
         today = now_dt.date().isoformat()
         action = "idle"
 
         if alert_state.active and alert_state.is_expired():
-            alert_state.dismiss()
-            display_manager.alert_hash = ""
-            display_manager.notify_all()
+            _dismiss_alert(only_if_expired=True)
             action = "alert_expired"
 
         if self.last_slot_key is None:
@@ -379,21 +571,25 @@ class ScheduleRunner:
             return action if action != "idle" else "init"
 
         if slot_key != self.last_slot_key:
-            self.last_slot_key = slot_key
-            self.last_date = today
             if st["is_dnd"]:
+                self.last_slot_key = slot_key
+                self.last_date = today
                 display_manager.notify_all()
                 return "enter_dnd"
+            # 成功后才提交时段快照；失败时下一 tick 继续重试本次切换。
             _render_cached_pages(force_refresh=True, notify="always")
+            self.last_slot_key = slot_key
+            self.last_date = today
             self.last_refresh_ts = now_ts
             return "slot_change"
 
         if today != self.last_date:
-            self.last_date = today
             if st["is_dnd"]:
                 get_fresh_context(force_refresh=True)
+                self.last_date = today
                 return "rollover_silent"
             _render_cached_pages(force_refresh=True, notify="if_changed")
+            self.last_date = today
             self.last_refresh_ts = now_ts
             return "rollover"
 
@@ -442,6 +638,7 @@ async def _scheduler_loop():
 
 @app.on_event("startup")
 async def _start_scheduler():
+    _validate_bind_security()
     display_manager.bind_loop(asyncio.get_running_loop())
     if os.environ.get("OPENINK_DISABLE_SCHEDULER") == "1":
         return
@@ -524,6 +721,31 @@ class DeviceEventRequest(BaseModel):
     index: Optional[int] = None
 
 
+def _validate_page_specs(pages: List[Dict[str, Any]]):
+    if not 1 <= len(pages) <= 20:
+        raise HTTPException(status_code=400, detail="页面数量必须为 1~20")
+    ids = []
+    for page in pages:
+        if not isinstance(page, dict):
+            raise HTTPException(status_code=400, detail="页面配置格式无效")
+        pid = str(page.get("id") or "").strip()
+        if not pid or len(pid) > 64 or page.get("template") not in ("2_1", "1_2", "2x2", "1x2", "1x1"):
+            raise HTTPException(status_code=400, detail="页面 ID 或模板无效")
+        if not isinstance(page.get("slots"), dict):
+            raise HTTPException(status_code=400, detail=f"页面 {pid} 的 slots 无效")
+        ids.append(pid)
+    if len(ids) != len(set(ids)):
+        raise HTTPException(status_code=400, detail="页面 ID 必须唯一")
+
+
+def _validate_schedule_pages(schedule: Dict[str, Any], pages: List[Dict[str, Any]]):
+    valid_ids = {str(p.get("id")) for p in pages}
+    for rule in normalize_schedule_config(schedule)["rules"]:
+        unknown = sorted(set(rule["pages"]) - valid_ids)
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"时段 {rule['name']} 引用了不存在的页面: {', '.join(unknown)}")
+
+
 _last_push_req: Optional[LayoutRequest] = None
 
 
@@ -543,6 +765,8 @@ def _do_publish_pages(req: LayoutRequest) -> Dict[str, Any]:
             }
         ]
 
+    _validate_page_specs(pages_data)
+    _validate_schedule_pages(cfg.get("schedule"), pages_data)
     mode = req.mode or dash_cfg.get("mode", "carousel")
     interval_sec = req.carousel_interval_sec or int(dash_cfg.get("carousel_interval_sec", 60))
 
@@ -559,11 +783,12 @@ def _do_publish_pages(req: LayoutRequest) -> Dict[str, Any]:
         updates["city"] = req.city
     save_config(updates)
 
+    # 发布与定时刷新统一遵循当前时段规则的页面筛选（规则 pages 为空 = 展示全部页面），
+    # 避免“发布时显示全部、30 分钟后定时刷新又被规则筛掉”导致的页数来回跳变与 madeye 反复重启。
     return _render_cached_pages(
         pages_data=pages_data,
         city_override=req.city,
         active_page_index=req.active_page_index,
-        ignore_schedule_rule=True,
     )
 
 
@@ -620,13 +845,12 @@ def api_v1_display(
         asset_bucket = "portrait"
 
     base_url = str(request.base_url).rstrip("/")
-    token_suffix = f"&token={token}" if token else ""
 
     playlist_out = []
     for item in display_manager.playlist:
         fname = item["filename"]
         fhash = item["hash"]
-        url = f"{base_url}/api/v1/assets/{asset_bucket}/{fname}?v={fhash}{token_suffix}"
+        url = f"{base_url}/api/v1/assets/{asset_bucket}/{fname}?v={fhash}"
         playlist_out.append({
             "index": item["index"],
             "id": item["id"],
@@ -645,18 +869,18 @@ def api_v1_display(
         "url": "",
     }
 
-    alert_active = alert_state.active and not alert_state.is_expired()
+    alert_active = _alert_is_active()
     if sched_state["is_dnd"] and not sched_state["allow_alert_override"]:
         alert_active = False
     alert_url = ""
     if alert_active and display_manager.alert_hash:
-        alert_url = f"{base_url}/api/v1/assets/{asset_bucket}/{display_manager.alert_filename}?v={display_manager.alert_hash}{token_suffix}"
+        alert_url = f"{base_url}/api/v1/assets/{asset_bucket}/{display_manager.alert_filename}?v={display_manager.alert_hash}"
 
     return {
         "status": 0,
         "version": display_manager.version,
         "mode": mode,
-        "refresh_rate": 300,
+        "refresh_rate": int(sched_state["active_interval_sec"]),
         "carousel_interval_sec": carousel_interval_sec,
         "schedule": {
             "rule_id": sched_state["rule_id"],
@@ -685,6 +909,7 @@ def api_v1_display(
 def api_v1_asset(
     bucket: str,
     filename: str,
+    request: Request,
     token: Optional[str] = Query(None),
     x_api_token: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
@@ -696,11 +921,12 @@ def api_v1_asset(
     file_path = os.path.join(ASSETS_BASE_DIR, norm_bucket, safe_name)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail=f"Asset not found: {safe_name}")
-    return FileResponse(
-        file_path,
-        media_type="image/png",
-        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    cache_control = (
+        "private, max-age=31536000, immutable"
+        if request.query_params.get("v")
+        else "no-cache, must-revalidate"
     )
+    return FileResponse(file_path, media_type="image/png", headers={"Cache-Control": cache_control})
 
 
 @app.get("/api/v1/wait")
@@ -717,7 +943,14 @@ async def api_v1_wait(
     _ensure_rendered()
     client_ip = request.client.host if request.client else "unknown"
     display_manager.record_client(device_id, client_ip, mode="longpoll")
-    res = await display_manager.wait_for_change(version, timeout)
+    effective_timeout = timeout
+    if _alert_is_active():
+        remaining = max(1, int(alert_state.expire_at - time.time()) + 1)
+        effective_timeout = min(timeout, remaining)
+    res = await display_manager.wait_for_change(version, effective_timeout)
+    if alert_state.active and alert_state.is_expired():
+        if await asyncio.to_thread(_dismiss_alert, only_if_expired=True):
+            res = {"changed": True, "version": display_manager.version}
     display_manager.record_client(device_id, client_ip, mode="longpoll")
     return res
 
@@ -737,32 +970,31 @@ def _handle_device_event(device_id: str, key: Optional[str], action: Optional[st
     msg = "no-op"
     if act == "toggle_todo" and index is not None and 1 <= index <= 9:
         td_data = load_todos(_todos_path(), max_items=50)
-        items = td_data.get("all_items", [])
+        # 与 Widget 一样使用“未完成在前”的显示顺序，避免按键操作原始列表中的另一项。
+        items = td_data.get("items", [])
         if index <= len(items):
             target = items[index - 1]
-            mark_todo_status(_todos_path(), target["id"], done=not target["done"])
-            msg = f"Toggled todo #{index}: {target['text']}"
+            if mark_todo_status(_todos_path(), target["id"], done=not target["done"]):
+                _render_cached_pages()
+                msg = f"Toggled todo #{index}: {target['text']}"
         else:
             msg = f"Todo #{index} out of range"
-        _render_cached_pages()
 
     elif act == "clear_completed":
         removed = clear_completed_todos(_todos_path())
         msg = f"Cleared {removed} completed todos"
-        _render_cached_pages()
+        if removed:
+            _render_cached_pages()
 
     elif act in ("refresh", "refresh_or_dismiss"):
-        if alert_state.active:
-            alert_state.dismiss()
-            display_manager.alert_hash = ""
-            display_manager.notify_all()
+        if _alert_is_active():
+            _dismiss_alert()
             msg = "Dismissed active alert"
         else:
             _render_cached_pages(force_refresh=True)
             msg = "Refreshed context and re-rendered pages"
     else:
-        _render_cached_pages()
-        msg = f"Processed event ({k or act})"
+        msg = f"Ignored event ({k or act})"
 
     return {
         "status": "ok",
@@ -856,6 +1088,7 @@ def update_config_api(
     _check_token(x_api_token, authorization, token)
     updates: Dict[str, Any] = {}
     force_refresh = False
+    pending_ha_secret: Optional[str] = None
 
     if req.city is not None and req.city.strip():
         updates["city"] = req.city.strip()
@@ -869,6 +1102,7 @@ def update_config_api(
         if req.carousel_interval_sec is not None:
             dash["carousel_interval_sec"] = max(5, min(int(req.carousel_interval_sec), 86400))
         if req.pages is not None and len(req.pages) > 0:
+            _validate_page_specs(req.pages)
             dash["pages"] = req.pages
             dash["template"] = req.pages[0].get("template", "2_1")
             dash["slots"] = req.pages[0].get("slots", {})
@@ -901,12 +1135,18 @@ def update_config_api(
         ha = dict(cfg.get("homeassistant", {}))
         ha_in = req.homeassistant
         if "url" in ha_in and ha_in["url"] is not None:
-            ha["url"] = validate_external_url(ha_in["url"].strip(), allow_private_lan=True)
+            raw_url = ha_in["url"].strip()
+            clean_url = validate_external_url(raw_url, allow_private_lan=True) if raw_url else ""
+            if raw_url and not clean_url:
+                raise HTTPException(status_code=400, detail="Home Assistant URL 无效")
+            ha["url"] = clean_url
+        if "ca_file" in ha_in:
+            ha["ca_file"] = str(ha_in.get("ca_file") or "").strip()
         if "sensors" in ha_in and isinstance(ha_in["sensors"], list):
             ha["sensors"] = ha_in["sensors"]
         token_val = ha_in.get("token")
         if token_val and not token_val.startswith("***"):
-            save_env_secret("HA_TOKEN", token_val.strip())
+            pending_ha_secret = token_val.strip()
             ha["token_env"] = "HA_TOKEN"
         updates["homeassistant"] = ha
         force_refresh = True
@@ -926,7 +1166,26 @@ def update_config_api(
         updates["schedule"] = normalize_schedule_config(req.schedule)
 
     if updates:
-        save_config(updates)
+        with config_transaction():
+            current_cfg = load_config()
+            candidate_pages = normalize_dashboard_pages(
+                {"dashboard": updates["dashboard"]} if "dashboard" in updates else current_cfg
+            )
+            candidate_schedule = updates.get("schedule", current_cfg.get("schedule"))
+            _validate_schedule_pages(candidate_schedule, candidate_pages)
+            if pending_ha_secret is not None:
+                previous_ha_secret = get_secret(current_cfg.get("homeassistant", {}), "token")
+                if not save_env_secret("HA_TOKEN", pending_ha_secret):
+                    raise HTTPException(status_code=500, detail="HA Token 保存失败")
+                try:
+                    save_config(updates)
+                except Exception as exc:
+                    # 配置事务失败时恢复原凭据，避免客户端收到失败但新 Token 已生效。
+                    if not save_env_secret("HA_TOKEN", previous_ha_secret):
+                        raise RuntimeError("配置保存及 HA Token 回滚均失败，请立即检查 .env") from exc
+                    raise
+            else:
+                save_config(updates)
 
     ctx = get_fresh_context(force_refresh=force_refresh)
     new_cfg = load_config()
@@ -990,7 +1249,7 @@ def test_ha_connection_api(
         return {"ok": False, "error": "请先输入 Home Assistant 实例地址 (URL)"}
     if not test_token:
         return {"ok": False, "error": "请先输入长期访问令牌 (Token)"}
-    ha = HomeAssistantClient(test_url, test_token)
+    ha = HomeAssistantClient(test_url, test_token, ca_file=ha_cfg.get("ca_file", ""))
     return ha.test_connection()
 
 
@@ -1012,7 +1271,7 @@ def get_ha_entities_api(
         return {"ok": False, "error": "请先配置 Home Assistant 实例地址 (URL)", "entities": []}
     if not target_token:
         return {"ok": False, "error": "请先配置长期访问令牌 (Token)", "entities": []}
-    ha = HomeAssistantClient(target_url, target_token)
+    ha = HomeAssistantClient(target_url, target_token, ca_file=ha_cfg.get("ca_file", ""))
     entities = ha.discover_sensors()
     return {"ok": True, "entities": entities}
 
@@ -1068,11 +1327,15 @@ def generate_preview(req: LayoutRequest):
     and returns PNG bytes for Web Studio preview.
     """
     composer = LayoutComposer(get_profile("default"))
-    context = dict(get_fresh_context(city_override=req.city))
-    if req.alert:
-        context["alert"] = req.alert
+    if req.alert and req.template == "1x1" and req.slots.get("full") == "alert":
+        # 纯通知预览不依赖天气、HA 或 ICS，避免本地排版编辑被外部采集阻塞。
+        context = {"alert": req.alert}
     else:
-        context.pop("alert", None)
+        context = dict(get_fresh_context(city_override=req.city))
+        if req.alert:
+            context["alert"] = req.alert
+        else:
+            context.pop("alert", None)
 
     img = composer.render_screen(req.template, req.slots, context, rotate=False)
 
@@ -1099,6 +1362,8 @@ def push_live(
         "message": "Published",
         "version": res["version"],
         "page_count": res["page_count"],
+        "total_page_count": res.get("total_page_count", res["page_count"]),
+        "rule_name": res.get("rule_name", ""),
         "size_kb": res["size_kb"],
         "connected_clients": len(clients),
     }
@@ -1174,14 +1439,16 @@ def clear_todos_api(
 # Alert / Instant Notification API
 # =========================================================================
 
+@app.get("/api/studio/alert/status")
 @app.get("/api/alert/status")
 def alert_status():
+    active = _alert_is_active()
     return {
-        "active": alert_state.active,
-        "title": alert_state.title,
-        "text": alert_state.text,
-        "sender": alert_state.sender,
-        "remaining_sec": max(0, int(alert_state.expire_at - time.time())) if alert_state.active else 0
+        "active": active,
+        "title": alert_state.title if active else "",
+        "text": alert_state.text if active else "",
+        "sender": alert_state.sender if active else "",
+        "remaining_sec": max(0, int(alert_state.expire_at - time.time())) if active else 0
     }
 
 
@@ -1203,6 +1470,7 @@ def device_status():
     }
 
 
+@app.post("/api/studio/alert/push")
 @app.post("/api/alert/push")
 def alert_push(
     req: AlertRequest,
@@ -1214,31 +1482,30 @@ def alert_push(
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="缺少 text 正文字段")
 
-    alert_state.set_alert(req.title, req.text, req.sender, req.duration)
+    with _render_lock:
+        portrait_dir = os.path.join(ASSETS_BASE_DIR, "portrait")
+        landscape_dir = os.path.join(ASSETS_BASE_DIR, "landscape")
+        os.makedirs(portrait_dir, exist_ok=True)
+        os.makedirs(landscape_dir, exist_ok=True)
 
-    portrait_dir = os.path.join(ASSETS_BASE_DIR, "portrait")
-    landscape_dir = os.path.join(ASSETS_BASE_DIR, "landscape")
-    os.makedirs(portrait_dir, exist_ok=True)
-    os.makedirs(landscape_dir, exist_ok=True)
+        composer = LayoutComposer(get_profile("default"))
+        landscape_alert_png = os.path.join(landscape_dir, "00_alert.png")
+        portrait_alert_png = os.path.join(portrait_dir, "00_alert.png")
 
-    composer = LayoutComposer(get_profile("default"))
-    landscape_alert_png = os.path.join(landscape_dir, "00_alert.png")
-    portrait_alert_png = os.path.join(portrait_dir, "00_alert.png")
+        img_landscape = composer.render_alert_screen(
+            title=req.title,
+            text=req.text,
+            sender=req.sender,
+            duration_min=req.duration,
+            rotate=False
+        )
+        _atomic_save_png(img_landscape, landscape_alert_png)
+        _atomic_save_png(_rotate_image_for_device(img_landscape), portrait_alert_png)
 
-    img_landscape = composer.render_alert_screen(
-        title=req.title,
-        text=req.text,
-        sender=req.sender,
-        duration_min=req.duration,
-        output_path=landscape_alert_png,
-        rotate=False
-    )
-    from PIL import Image
-    img_rotated = _rotate_image_for_device(img_landscape)
-    img_rotated.save(portrait_alert_png, optimize=True)
-
-    display_manager.alert_hash = _file_md5_short(portrait_alert_png)
-    display_manager.notify_all()
+        # 资产完整发布后再提交状态，失败时不会留下 active 但无图片的 Alert。
+        alert_state.set_alert(req.title, req.text, req.sender, req.duration)
+        display_manager.alert_hash = _file_md5_short(portrait_alert_png)
+        display_manager.notify_all()
 
     return {
         "status": "ok",
@@ -1268,6 +1535,7 @@ def alert_push_get(
     return alert_push(req, token=token, x_api_token=x_api_token, authorization=authorization)
 
 
+@app.post("/api/studio/alert/dismiss")
 @app.post("/api/alert/dismiss")
 def alert_dismiss_post(
     token: Optional[str] = Query(None),
@@ -1275,9 +1543,7 @@ def alert_dismiss_post(
     authorization: Optional[str] = Header(None),
 ):
     _check_token(x_api_token, authorization, token)
-    alert_state.dismiss()
-    display_manager.alert_hash = ""
-    _render_cached_pages()
+    _dismiss_alert()
     return {
         "status": "ok",
         "version": display_manager.version,
@@ -1295,5 +1561,6 @@ def alert_dismiss_get(
 
 
 if __name__ == "__main__":
+    _validate_bind_security()
     _ensure_rendered()
     uvicorn.run(app, host=BIND_HOST, port=BIND_PORT, log_level="warning")

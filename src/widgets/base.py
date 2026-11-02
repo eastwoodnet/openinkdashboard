@@ -22,7 +22,7 @@ INK_BLACK = (0.0, 0.0, 0.0)             # All text, numbers, and main borders MU
 INK_WHITE = (1.0, 1.0, 1.0)
 INK_SHADOW = (0.42, 0.42, 0.42)         # 42% medium-dark gray for Neo-Brutalist shadow only
 INK_TRACK_GRAY = (0.82, 0.82, 0.82)     # Light gray for progress bar track and subtle pills
-INK_DIVIDER = (0.70, 0.70, 0.70)       # Crisp divider lines
+INK_DIVIDER = (0.82, 0.82, 0.82)       # Level 12 divider lines and dotted leaders
 INK_RED = (0.85, 0.0, 0.0)              # Red accent for 3-color EPDs
 
 # Universal Layout Grid Margins
@@ -53,7 +53,8 @@ def draw_pango_text(
     max_width: Optional[float] = None,
     wrap: bool = False,
     ellipsize: bool = True,
-    line_spacing: int = 0
+    line_spacing: int = 0,
+    max_height: Optional[float] = None
 ) -> Tuple[float, float]:
     """
     Renders high-contrast text using Pango & Cairo.
@@ -77,6 +78,10 @@ def draw_pango_text(
             layout.set_wrap(Pango.WrapMode.WORD_CHAR)
         elif ellipsize:
             layout.set_ellipsize(Pango.EllipsizeMode.END)
+
+    if max_height is not None and max_height > 0:
+        layout.set_height(int(max_height * Pango.SCALE))
+        layout.set_ellipsize(Pango.EllipsizeMode.END)
 
     ink_rect, log_rect = layout.get_pixel_extents()
     w = log_rect.width
@@ -242,6 +247,40 @@ def draw_checkbox(
     cr.restore()
 
 
+def _create_task_layout(
+    cr: cairo.Context,
+    text: str,
+    font_size: int,
+    max_width: float,
+    done: bool,
+    font_family: str
+):
+    layout = PangoCairo.create_layout(cr)
+    font_desc = Pango.FontDescription(f"{font_family} {font_size}")
+    font_desc.set_weight(Pango.Weight.NORMAL if done else Pango.Weight.BOLD)
+    layout.set_font_description(font_desc)
+    layout.set_text(text, -1)
+    if max_width > 0:
+        layout.set_width(int(max_width * Pango.SCALE))
+        layout.set_wrap(Pango.WrapMode.WORD_CHAR)
+        layout.set_spacing(int(3 * Pango.SCALE))
+    return layout
+
+
+def measure_task_text(
+    cr: cairo.Context,
+    text: str,
+    font_size: int,
+    max_width: float,
+    done: bool = False,
+    font_family: str = DEFAULT_FONT_FAMILY
+) -> Tuple[float, float]:
+    """测量完整折行任务的像素尺寸，供绘制前做高度预算。"""
+    layout = _create_task_layout(cr, text, font_size, max_width, done, font_family)
+    _, log_rect = layout.get_pixel_extents()
+    return float(log_rect.width), float(log_rect.height)
+
+
 def draw_task_text(
     cr: cairo.Context,
     text: str,
@@ -258,16 +297,7 @@ def draw_task_text(
     When done=True, draws per-line strikethrough matching each individual line's exact ink width.
     Returns (layout_width, layout_height).
     """
-    layout = PangoCairo.create_layout(cr)
-    font_desc = Pango.FontDescription(f"{font_family} {font_size}")
-    font_desc.set_weight(Pango.Weight.NORMAL if done else Pango.Weight.BOLD)
-    layout.set_font_description(font_desc)
-    layout.set_text(text, -1)
-    if max_width > 0:
-        layout.set_width(int(max_width * Pango.SCALE))
-        layout.set_wrap(Pango.WrapMode.WORD_CHAR)
-        layout.set_spacing(int(3 * Pango.SCALE))
-
+    layout = _create_task_layout(cr, text, font_size, max_width, done, font_family)
     _, log_rect = layout.get_pixel_extents()
 
     cr.save()
