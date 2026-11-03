@@ -12,6 +12,7 @@ import gi
 gi.require_version('Pango', '1.0')
 from gi.repository import Pango
 from profiles import DeviceProfile
+from calendar_info import get_lunar_date
 from widgets.base import (
     WidgetBase, draw_pango_text, draw_pango_text_right, draw_rounded_rect,
     draw_badge_pill, draw_hero_text,
@@ -105,7 +106,6 @@ class CalendarWidget(WidgetBase):
             wy = 160
             strip_h = 102
 
-            from calendar_info import get_lunar_date
             event_days = set(context.get("agenda", {}).get("event_dates_in_month", []))
 
             for i, wd in enumerate(weekdays):
@@ -189,28 +189,82 @@ class CalendarWidget(WidgetBase):
             total_days = calendar.monthrange(year, month)[1]
             draw_pango_text_right(cr, f"共 {total_days} 天", w - pad_x, grid_header_y + 1, 13, bold=False, color=INK_BLACK)
 
-            # Weekday column headers
+            # Weekday column headers in a unified capsule bar (方案三：周一至周日整体胶囊细框，周六日一体化反色色块)
             cal_matrix = calendar.monthcalendar(year, month)
-            cw = (w - pad_x * 2) / 7
+            grid_w = w - pad_x * 2.0
+            cw = grid_w / 7.0
             headers = ["一", "二", "三", "四", "五", "六", "日"]
-            hy = 226
 
+            is_full_screen = (w > 500)
+            day_font_sz = 15.0 if is_full_screen else 13.0
+            lunar_font_sz = 10.5 if is_full_screen else 9.0
+
+            matrix_start_y = 258
+            hy = matrix_start_y - 34
+            bar_h = 24.0
+            bar_x = pad_x
+            bar_w = grid_w
+            bar_r = 5.0
+
+            # 1. Outer capsule white background
+            draw_rounded_rect(cr, bar_x, hy, bar_w, bar_h, bar_r)
+            cr.set_source_rgb(*INK_WHITE)
+            cr.fill()
+
+            # 2. Fill the weekend right portion (Saturday & Sunday, cols 5 and 6) with solid black
+            sat_x = pad_x + 5 * cw
+            sun_right = pad_x + 7 * cw
+            block_w = sun_right - sat_x
+
+            cr.save()
+            draw_rounded_rect(cr, bar_x, hy, bar_w, bar_h, bar_r)
+            cr.clip()
+            cr.set_source_rgb(*INK_BLACK)
+            cr.rectangle(sat_x, hy, block_w, bar_h)
+            cr.fill()
+            # Fine vertical divider line between Saturday and Sunday
+            cr.set_source_rgb(*INK_WHITE)
+            cr.set_line_width(0.8)
+            cr.move_to(pad_x + 6 * cw, hy + 3)
+            cr.line_to(pad_x + 6 * cw, hy + bar_h - 3)
+            cr.stroke()
+            cr.restore()
+
+            # 3. Outer capsule 1.2px fine stroke
+            draw_rounded_rect(cr, bar_x, hy, bar_w, bar_h, bar_r)
+            cr.set_source_rgb(*INK_BLACK)
+            cr.set_line_width(1.2)
+            cr.stroke()
+
+            # 4. Header text (Mon-Fri black, Sat-Sun bold white)
             for col_idx, h_name in enumerate(headers):
                 hx = pad_x + col_idx * cw
-                draw_pango_text(cr, h_name, hx, hy, 13, bold=True, color=INK_BLACK, max_width=cw, align=Pango.Alignment.CENTER)
+                is_weekend = (col_idx in (5, 6))
+                if is_weekend:
+                    draw_pango_text(cr, h_name, hx, hy + 2, 12.5, bold=True, color=INK_WHITE, max_width=cw, align=Pango.Alignment.CENTER)
+                else:
+                    draw_pango_text(cr, h_name, hx, hy + 2, 12.5, bold=False, color=INK_BLACK, max_width=cw, align=Pango.Alignment.CENTER)
 
             # Subtle hairline separating weekday headers and date matrix
             cr.set_source_rgb(*INK_DIVIDER)
             cr.set_line_width(0.8)
-            cr.move_to(pad_x, 250)
-            cr.line_to(w - pad_x, 250)
+            cr.move_to(pad_x, matrix_start_y - 6)
+            cr.line_to(w - pad_x, matrix_start_y - 6)
             cr.stroke()
 
             # Dynamic row height based on remaining card height
-            matrix_start_y = 258
-            avail_grid_h = h - matrix_start_y - 16
+            avail_grid_h = h - matrix_start_y - 14
             num_weeks = max(1, len(cal_matrix))
-            row_h = int(avail_grid_h / num_weeks)
+            row_h = avail_grid_h / num_weeks
+
+            # Vertical spacing: 5px gap between day and lunar text
+            v_gap = 5.0
+            ink_day_h = 14.0
+            ink_lun_h = 11.0
+            stack_h = ink_day_h + v_gap + ink_lun_h
+            top_margin = max(3.0, (row_h - stack_h) / 2.0)
+            y_day_offset = top_margin - 3.0
+            y_lun_offset = top_margin + ink_day_h + v_gap - 2.0
 
             for row_idx, week in enumerate(cal_matrix):
                 ry = matrix_start_y + row_idx * row_h
@@ -219,23 +273,60 @@ class CalendarWidget(WidgetBase):
                         continue
                     dx = pad_x + col_idx * cw
                     is_today = (d_num == day)
+                    is_weekend = (col_idx in (5, 6))
                     has_event = (d_num in event_days)
                     d_str = str(d_num)
 
+                    # Lunar date calculation
+                    cell_dt = datetime.date(year, month, d_num)
+                    try:
+                        lunar_data = get_lunar_date(cell_dt)
+                        l_day = lunar_data.get("day", 1)
+                        if l_day == 1:
+                            ld_str = lunar_data.get("month_str", "初一")
+                            is_lunar_first = True
+                        else:
+                            ld_str = lunar_data.get("day_str", "")
+                            is_lunar_first = False
+                    except Exception:
+                        ld_str = ""
+                        is_lunar_first = False
+
+                    pill_w = min(cw - 6, 50) if is_full_screen else (cw - 6)
+                    pill_h = row_h - 4
+                    pill_x = dx + (cw - pill_w) / 2
+                    pill_y = ry + 2
+
                     if is_today:
-                        circle_sz = 34
-                        draw_rounded_rect(cr, dx + (cw - circle_sz) / 2, ry + (row_h - circle_sz) / 2, circle_sz, circle_sz, circle_sz / 2)
+                        # Today: Unified solid black rounded pill with pure white text
+                        draw_rounded_rect(cr, pill_x, pill_y, pill_w, pill_h, 6)
                         cr.set_source_rgb(*INK_BLACK)
                         cr.fill()
-                        draw_pango_text(cr, d_str, dx, ry + (row_h - 20) / 2, 15, bold=True, color=INK_WHITE, max_width=cw, align=Pango.Alignment.CENTER)
+
+                        draw_pango_text(cr, d_str, dx, ry + y_day_offset, day_font_sz, bold=True, color=INK_WHITE, max_width=cw, align=Pango.Alignment.CENTER)
+                        if ld_str:
+                            draw_pango_text(cr, ld_str, dx, ry + y_lun_offset, lunar_font_sz, bold=True, color=INK_WHITE, max_width=cw, align=Pango.Alignment.CENTER)
+
                         if has_event:
-                            draw_rounded_rect(cr, dx + cw / 2 - 2, ry + (row_h + circle_sz) / 2 - 6, 4, 4, 2)
+                            draw_rounded_rect(cr, dx + cw / 2 - 2, pill_y + pill_h - 4, 4, 3, 1.5)
                             cr.set_source_rgb(*INK_WHITE)
                             cr.fill()
+
                     else:
-                        draw_pango_text(cr, d_str, dx, ry + (row_h - 20) / 2, 15, bold=False, color=INK_BLACK, max_width=cw, align=Pango.Alignment.CENTER)
+                        # Normal day (clean white background, pure typography contrast)
+                        if is_weekend:
+                            # Weekend: Heavy Bold (加粗加黑)
+                            draw_pango_text(cr, d_str, dx, ry + y_day_offset, day_font_sz, bold=True, color=INK_BLACK, max_width=cw, align=Pango.Alignment.CENTER)
+                            if ld_str:
+                                draw_pango_text(cr, ld_str, dx, ry + y_lun_offset, lunar_font_sz, bold=True, color=INK_BLACK, max_width=cw, align=Pango.Alignment.CENTER)
+                        else:
+                            # Weekday: Regular font weight (若为农历月初则加粗月名)
+                            draw_pango_text(cr, d_str, dx, ry + y_day_offset, day_font_sz, bold=is_lunar_first, color=INK_BLACK, max_width=cw, align=Pango.Alignment.CENTER)
+                            if ld_str:
+                                draw_pango_text(cr, ld_str, dx, ry + y_lun_offset, lunar_font_sz, bold=is_lunar_first, color=INK_BLACK, max_width=cw, align=Pango.Alignment.CENTER)
+
                         if has_event:
-                            draw_rounded_rect(cr, dx + cw / 2 - 2, ry + (row_h + 20) / 2 + 5, 4, 4, 2)
+                            draw_rounded_rect(cr, dx + cw / 2 - 2, ry + row_h - 4, 4, 3, 1.5)
                             cr.set_source_rgb(*INK_BLACK)
                             cr.fill()
 
